@@ -1,19 +1,20 @@
 {
   "schema": "MAIBAO_FAST_PATH_START_GATE_V1",
   "status": "OPEN",
-  "task_id": "platform-enforcement-acceptance-20260917",
+  "task_id": "unified-authorization-live-activation-v1-rebase-20260917",
   "repository": "lik710919-cpu/maibao-zero-cost-compute-v0",
   "contract_id": "MAIBAO_FAST_PATH_CROSS_REPO_BINDING_V1",
-  "branch": "evidence/platform-enforcement-acceptance-20260917",
-  "base_commit": "5a8154f9c2c317b15bb74aa73c36aca8f9acb174",
-  "task_summary": "记录 GitHub 原生分支保护与必需检查受保护路径验收证据",
+  "branch": "experiment/unified-authorization-live-activation-v1-rebase-20260917",
+  "base_commit": "c488992c72dee0f572f045ee1753866c508b61d7",
+  "task_summary": "在最新受保护 main 上重基线统一授权启动器与 GitLab 真实外部算力激活闭环",
   "owned_paths": [
-    "_evidence/platform-enforcement-20260917.md"
+    "experiments/zero_cost_compute_v0",
+    "tools/start-unified-authorization.ps1"
   ],
-  "task_type": "DOCUMENT_ONLY",
+  "task_type": "NON_FAST_PATH",
   "classification": {
-    "mode": "MANUAL_ACCEPTANCE",
-    "reason": "Platform enforcement acceptance evidence only"
+    "mode": "AUTO",
+    "reason": "NO_SAFE_FAST_PATH_MATCH"
   },
   "authority": {
     "repository": "lik710919-cpu/maibao-reserve-repo",
