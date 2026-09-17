@@ -68,6 +68,32 @@ class UnifiedAuthCliTests(unittest.TestCase):
         self.assertEqual(service.calls, ["gitlab"])
         self.assertIn('"live_active": true', output.getvalue().lower())
 
+    def test_onboard_command_authorizes_then_activates_once(self):
+        import unified_auth
+
+        class FakeService:
+            def __init__(self):
+                self.calls = []
+
+            def onboard(self, provider_id):
+                self.calls.append(provider_id)
+                return {
+                    "verified": True,
+                    "provider_id": "gitlab-hosted-runners",
+                    "live_active": True,
+                    "local_compute_used": False,
+                }
+
+        service = FakeService()
+        output = io.StringIO()
+        with patch.object(unified_auth, "build_default_service", return_value=service):
+            with redirect_stdout(output):
+                code = unified_auth.main(["onboard", "--provider", "gitlab"])
+
+        self.assertEqual(code, 0)
+        self.assertEqual(service.calls, ["gitlab"])
+        self.assertIn('"live_active": true', output.getvalue().lower())
+
 
 if __name__ == "__main__":
     unittest.main()
