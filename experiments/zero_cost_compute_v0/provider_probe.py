@@ -46,10 +46,14 @@ def current_catalog(
         capacity,
     )
     candidates = [
-        ProviderSnapshot("netlify-free", False, True, True, 0, 0, "none", "authorization_required"),
-        ProviderSnapshot("vercel-free", False, True, True, 0, 0, "none", "authorization_required"),
+        ProviderSnapshot("netlify-free", False, False, False, 0, 0, "none", "authorization_required"),
+        ProviderSnapshot("vercel-free", False, False, False, 0, 0, "none", "authorization_required"),
     ]
-    catalog = build_catalog([github, *candidates])
+    execution_provider_ids = ["github-actions-public"] if github.status == "ready" else []
+    catalog = build_catalog(
+        [github, *candidates],
+        execution_provider_ids=execution_provider_ids,
+    )
     catalog["candidate_provider_ids"] = [provider.provider_id for provider in candidates]
     catalog["providers"] = [asdict(provider) for provider in [github, *candidates]]
     return catalog
