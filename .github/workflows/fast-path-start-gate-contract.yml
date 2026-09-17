@@ -1,0 +1,20 @@
+name: Fast Path Machine Start Gate Contract
+
+on:
+  push:
+    branches:
+      - activation/fast-path-start-gate-20260917
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  gate-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install pytest
+      - run: pytest -q tests/test_fast_path_start_gate_contract.py
