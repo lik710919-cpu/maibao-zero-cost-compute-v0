@@ -1,0 +1,50 @@
+name: Zero Cash Cost External Compute V7 Resource Growth
+
+on:
+  push:
+    branches:
+      - experiment/zero-cost-compute-v7-resource-growth
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run full unit suite
+        run: python -m unittest discover -s experiments/zero_cost_compute_v0/tests -v
+
+  growth-evidence:
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build resource growth report
+        run: >-
+          python experiments/zero_cost_compute_v0/resource_growth.py
+          --registry experiments/zero_cost_compute_v0/provider_candidates.json
+          --output evidence/resource-growth-report.json
+      - name: Require a safe next adapter target
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('evidence/resource-growth-report.json').read_text())
+          assert report['next_adapter_target'], 'no auto-eligible next adapter target'
+          assert report['local_formal_compute_percent'] == 0
+          assert 'gitlab-hosted-runners' in report['auto_eligible']
+          assert 'modal-starter' not in report['auto_eligible']
+          assert 'google-cloud-run-free-tier' not in report['auto_eligible']
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zero-cost-compute-v7-resource-growth-evidence
+          path: evidence/resource-growth-report.json
+          if-no-files-found: error
