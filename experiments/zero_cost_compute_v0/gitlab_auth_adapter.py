@@ -51,12 +51,18 @@ class GitLabAuthAdapter:
         hostname: str = "gitlab.com",
         runner: Any | None = None,
         project_id: str | None = None,
+        project_name: str = "maibao-external-compute",
+        source_root: str | Path | None = None,
     ) -> None:
         if not hostname or "/" in hostname:
             raise ValueError("GitLab hostname is invalid")
+        if not isinstance(project_name, str) or not self._PROJECT_RE.fullmatch(project_name):
+            raise ValueError("GitLab project name is invalid")
         self.hostname = hostname
         self.runner = runner or SubprocessCommandRunner()
         self.project_id = str(project_id) if project_id else None
+        self.project_name = project_name
+        self.source_root = Path(source_root) if source_root is not None else Path(__file__).resolve().parents[2]
 
     def _run(self, args: list[str], *, capture: bool = True) -> Any:
         result = self.runner.run(args, capture=capture)
@@ -97,9 +103,13 @@ class GitLabAuthAdapter:
 
     def poll_authorization(self) -> dict[str, Any]:
         try:
-            return self.validate_identity()
+            identity = self.validate_identity()
         except RuntimeError:
             return {"authorized": False}
+        return {
+            **identity,
+            "scopes": self.inspect_scopes(),
+        }
 
     def validate_identity(self) -> dict[str, Any]:
         result = self._run(
@@ -121,8 +131,6 @@ class GitLabAuthAdapter:
         }
 
     def inspect_scopes(self) -> list[str]:
-        # The built-in glab OAuth application owns the exact account-level scopes.
-        # Keep registry evidence conservative instead of copying any token material.
         return ["gitlab_cli_oauth"]
 
     def refresh_authorization(self) -> dict[str, Any]:
@@ -272,9 +280,17 @@ class GitLabAuthAdapter:
     ) -> dict[str, Any]:
         if vault is None:
             raise ValueError("credential vault is required")
+
         effective_project = str(project_id or self.project_id or "")
         if not effective_project:
-            raise RuntimeError("GitLab project must be bound before runtime credential creation")
+            project = self.ensure_project(self.project_name)
+            effective_project = project["project_id"]
+            self.ensure_compute_bundle(
+                project_id=effective_project,
+                default_branch=project["default_branch"],
+                source_root=self.source_root,
+            )
+
         endpoint = f"projects/{quote(effective_project, safe='')}/triggers"
         created = self._run(
             [
@@ -316,6 +332,31 @@ class GitLabAuthAdapter:
     def revoke_runtime_credentials(self, runtime_ref: str | None, vault: Any) -> None:
         if runtime_ref and vault.exists(runtime_ref):
             vault.delete(runtime_ref)
+
+    def revoke_remote_runtime_credentials(
+        self,
+        *,
+        runtime_credential_id: str | None,
+        bound_resource: str | None,
+    ) -> None:
+        if not runtime_credential_id or not bound_resource:
+            return
+        if not str(runtime_credential_id).isdigit() or not str(bound_resource).isdigit():
+            raise ValueError("GitLab trigger and project IDs must be numeric")
+        endpoint = f"projects/{quote(str(bound_resource), safe='')}/triggers/{quote(str(runtime_credential_id), safe='')}"
+        self._run(
+            [
+                "glab",
+                "api",
+                endpoint,
+                "--hostname",
+                self.hostname,
+                "--method",
+                "DELETE",
+                "--silent",
+            ],
+            capture=True,
+        )
 
     def revoke_user_authorization(self) -> None:
         result = self.runner.run(
