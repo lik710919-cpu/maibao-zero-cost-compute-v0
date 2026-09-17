@@ -106,6 +106,8 @@ class RecoveryVerificationTests(unittest.TestCase):
         self.assertEqual(evidence["recovered_indexes"], [4])
         self.assertEqual(evidence["primary_provider_counts"], {"github-actions-public": 7})
         self.assertEqual(evidence["repair_provider_counts"], {"wandbox-public": 1})
+        self.assertEqual(evidence["healthy_shard_repair_count"], 0)
+        self.assertNotIn("github_primary_recomputed_count", evidence)
         self.assertEqual(evidence["local_formal_compute_percent"], 0)
 
     def test_rejects_duplicate_repair(self):
