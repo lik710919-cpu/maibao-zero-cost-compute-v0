@@ -185,7 +185,7 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: v6-repair-plan
+          name: v6-recovery-repair-plan
           path: repair-plan/repair-plan.json
           if-no-files-found: error
 
@@ -231,7 +231,7 @@ jobs:
           path: plan
       - uses: actions/download-artifact@v4
         with:
-          name: v6-repair-plan
+          name: v6-recovery-repair-plan
           path: repair-plan
       - uses: actions/download-artifact@v4
         with:
