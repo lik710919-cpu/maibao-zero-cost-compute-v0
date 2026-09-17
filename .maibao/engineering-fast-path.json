@@ -1,0 +1,10 @@
+{
+  "contract_id": "MAIBAO_FAST_PATH_CROSS_REPO_BINDING_V1",
+  "repository": "lik710919-cpu/maibao-zero-cost-compute-v0",
+  "authority_repository": "lik710919-cpu/maibao-reserve-repo",
+  "authority_ref": "feat/fast-path-cross-repo-default-entry-20260917",
+  "authority_entry": "scripts/engineering_fast_path_cross_repo.py",
+  "classification_required": true,
+  "fallback": "FAIL_CLOSED",
+  "hard_authority_boundary_overridable": false
+}
