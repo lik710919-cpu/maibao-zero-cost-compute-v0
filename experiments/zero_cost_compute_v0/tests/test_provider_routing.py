@@ -11,14 +11,15 @@ class ProviderRoutingTests(unittest.TestCase):
         import provider_router
         return provider_model, provider_router
 
-    def test_rejects_unauthorized_unhealthy_and_nonzero_cost(self):
+    def test_rejects_unauthorized_unhealthy_nonzero_cost_and_unproven(self):
         model, router = self._modules()
         P = model.ProviderSnapshot
         providers = [
-            P("good", True, True, True, 9, 2, "real", "ready"),
+            P("good", True, True, True, 9, 2, "run:real", "ready"),
             P("unauthorized", False, True, True, 1, 99, "none", "authorization_required"),
-            P("unhealthy", True, False, True, 1, 99, "real", "unhealthy"),
-            P("unknown-cost", True, True, False, 1, 99, "real", "paid_or_unknown"),
+            P("unhealthy", True, False, True, 1, 99, "run:real", "unhealthy"),
+            P("unknown-cost", True, True, False, 1, 99, "run:real", "paid_or_unknown"),
+            P("synthetic-only", True, True, True, 0, 99, "synthetic", "ready"),
         ]
         self.assertEqual([p.provider_id for p in router.eligible_providers(providers)], ["good"])
 
@@ -26,9 +27,9 @@ class ProviderRoutingTests(unittest.TestCase):
         model, router = self._modules()
         P = model.ProviderSnapshot
         providers = [
-            P("slow", True, True, True, 30, 100, "real", "ready"),
-            P("fast-small", True, True, True, 5, 2, "real", "ready"),
-            P("fast-big", True, True, True, 5, 8, "real", "ready"),
+            P("slow", True, True, True, 30, 100, "run:slow", "ready"),
+            P("fast-small", True, True, True, 5, 2, "run:small", "ready"),
+            P("fast-big", True, True, True, 5, 8, "run:big", "ready"),
         ]
         route = router.route_provider(providers)
         self.assertEqual(route["primary"], "fast-big")
