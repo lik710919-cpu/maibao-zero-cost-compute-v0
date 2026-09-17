@@ -18,3 +18,37 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run full unit suite
         run: python -m unittest discover -s experiments/zero_cost_compute_v0/tests -v
+
+  growth-evidence:
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build V9 policy-aware growth report
+        run: >-
+          python experiments/zero_cost_compute_v0/resource_growth.py
+          --registry experiments/zero_cost_compute_v0/provider_candidates.json
+          --output evidence/policy-capacity-growth-report.json
+      - name: Verify lifecycle and policy separation
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('evidence/policy-capacity-growth-report.json').read_text())
+          assert report['active_capacity_claimed'] is False
+          assert report['local_formal_compute_percent'] == 0
+          assert 'gitlab-hosted-runners' in report['adapter_ready']
+          assert report['next_adapter_target'] is None
+          assert report['next_research_target'] == 'circleci-open-source'
+          assert 'circleci-open-source' in report['policy_gate']
+          assert 'github-codespaces-personal' in report['developer_environment']
+          assert 'azure-devops-private-free' in report['manual_gate']
+          assert 'bitbucket-pipelines-free' in report['manual_gate']
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zero-cost-compute-v9-policy-capacity-evidence
+          path: evidence/policy-capacity-growth-report.json
+          if-no-files-found: error
