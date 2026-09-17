@@ -39,9 +39,13 @@ def valid_receipt() -> dict:
             "cross_repo_entry_path": "scripts/engineering_fast_path_cross_repo.py",
             "catalog_path": "config/engineering_fast_paths.json"
         },
+        "authority_blobs": {
+            "classifier_blob_sha": "1a1b1c9a091ec4da7ac8e0890355c88fe4416847",
+            "catalog_blob_sha": "1fa2f2a6692ee2fc2f018cd3fd5cd8e63950c929"
+        },
         "authority_digests": {
-            "classifier_sha256": "placeholder-classifier",
-            "catalog_sha256": "placeholder-catalog"
+            "classifier_sha256": "recorded-by-authority",
+            "catalog_sha256": "recorded-by-authority"
         }
     }
 
@@ -74,3 +78,11 @@ def test_out_of_scope_change_fails_closed(tmp_path: Path):
     result = run_verify(tmp_path, valid_receipt(), changed=["docs/unrelated.md"])
     assert result.returncode == 2
     assert "PATH_OUT_OF_SCOPE" in result.stderr
+
+
+def test_wrong_authority_blob_fails_closed(tmp_path: Path):
+    receipt = valid_receipt()
+    receipt["authority_blobs"]["classifier_blob_sha"] = "0" * 40
+    result = run_verify(tmp_path, receipt)
+    assert result.returncode == 2
+    assert "AUTHORITY_BLOB_MISMATCH" in result.stderr
