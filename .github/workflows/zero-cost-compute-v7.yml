@@ -1,0 +1,20 @@
+name: Zero Cash Cost External Compute V7 Resource Growth
+
+on:
+  push:
+    branches:
+      - experiment/zero-cost-compute-v7-resource-growth
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run full unit suite
+        run: python -m unittest discover -s experiments/zero_cost_compute_v0/tests -v
