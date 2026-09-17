@@ -1,0 +1,27 @@
+name: Zero Cash Cost External Compute V6 Self Healing
+
+on:
+  push:
+    branches:
+      - experiment/zero-cost-compute-v6-self-healing
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  V6_N: "800000"
+  V6_TARGET_ITEMS: "100000"
+  V6_MAX_CHUNKS: "8"
+  V6_FAILURE_INDEX: "4"
+  WANDBOX_COMPILER: "cpython-3.13.8"
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run full unit suite
+        run: python -m unittest discover -s experiments/zero_cost_compute_v0/tests -v
