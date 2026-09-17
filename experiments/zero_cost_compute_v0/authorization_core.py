@@ -228,9 +228,9 @@ class AuthorizationCore:
 
         runtime_ref = record.runtime_credential_ref
         user_ref = record.user_credential_ref
+        runtime_credential_id = record.runtime_credential_id
+        bound_resource = record.bound_resource
 
-        # Explicit user revocation is local-first and terminal. Remote cleanup is
-        # best-effort and cannot leave the provider usable if the platform is down.
         if runtime_ref and self.vault.exists(runtime_ref):
             self.vault.delete(runtime_ref)
         if user_ref and self.vault.exists(user_ref):
@@ -248,6 +248,15 @@ class AuthorizationCore:
         self.registry.put(revoked)
 
         remote_incomplete = False
+        remote_runtime_revoke = getattr(adapter, "revoke_remote_runtime_credentials", None)
+        if callable(remote_runtime_revoke):
+            try:
+                remote_runtime_revoke(
+                    runtime_credential_id=runtime_credential_id,
+                    bound_resource=bound_resource,
+                )
+            except Exception:
+                remote_incomplete = True
         try:
             adapter.revoke_runtime_credentials(runtime_ref, self.vault)
         except Exception:
