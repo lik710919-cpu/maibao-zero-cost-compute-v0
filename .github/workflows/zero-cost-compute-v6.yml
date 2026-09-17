@@ -1,0 +1,285 @@
+name: Zero Cash Cost External Compute V6 Self Healing
+
+on:
+  push:
+    branches:
+      - experiment/zero-cost-compute-v6-self-healing
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  V6_N: "800000"
+  V6_TARGET_ITEMS: "100000"
+  V6_MAX_CHUNKS: "8"
+  V6_FAILURE_INDEX: "4"
+  WANDBOX_COMPILER: "cpython-3.13.8"
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run full unit suite
+        run: python -m unittest discover -s experiments/zero_cost_compute_v0/tests -v
+
+  plan:
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      n: ${{ steps.plan.outputs.n }}
+      chunks: ${{ steps.plan.outputs.chunks }}
+      failure_index: ${{ steps.plan.outputs.failure_index }}
+      assignments: ${{ steps.plan.outputs.assignments }}
+      repair_provider_id: ${{ steps.plan.outputs.repair_provider_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build recovery plan with reserved Wandbox budget
+        id: plan
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: >-
+          python experiments/zero_cost_compute_v0/build_recovery_plan.py
+          --n "$V6_N"
+          --target-items-per-chunk "$V6_TARGET_ITEMS"
+          --max-chunks "$V6_MAX_CHUNKS"
+          --compiler "$WANDBOX_COMPILER"
+          --output plan/recovery-plan.json
+          --github-output "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v6-recovery-plan
+          path: plan/recovery-plan.json
+          if-no-files-found: error
+
+  primary-workers:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        assignment: ${{ fromJSON(needs.plan.outputs.assignments) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Execute primary shard with controlled pre-compute failure
+        id: compute
+        continue-on-error: ${{ matrix.assignment.index == 4 }}
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+        shell: bash
+        run: |
+          if [ "${{ matrix.assignment.index }}" = "$V6_FAILURE_INDEX" ]; then
+            echo "controlled pre-compute failure for shard $V6_FAILURE_INDEX" >&2
+            exit 42
+          fi
+          python experiments/zero_cost_compute_v0/assigned_chunk.py \
+            --n "${{ needs.plan.outputs.n }}" \
+            --chunks "${{ needs.plan.outputs.chunks }}" \
+            --index "${{ matrix.assignment.index }}" \
+            --provider "${{ matrix.assignment.provider_id }}" \
+            --compiler "$WANDBOX_COMPILER" \
+            --output "out/result-${{ matrix.assignment.index }}.json"
+      - name: Require the injected shard to fail before compute
+        if: ${{ matrix.assignment.index == 4 && steps.compute.outcome != 'failure' }}
+        run: exit 1
+      - name: Record controlled failure evidence
+        if: ${{ matrix.assignment.index == 4 && steps.compute.outcome == 'failure' }}
+        shell: bash
+        run: |
+          mkdir -p failure
+          cat > failure/failure-4.json <<EOF
+          {
+            "chunk_index": 4,
+            "failure_stage": "before-formal-compute",
+            "github_run_id": "${GITHUB_RUN_ID}",
+            "local_compute_used": false,
+            "original_provider_id": "github-actions-public",
+            "status": "controlled-failure"
+          }
+          EOF
+      - name: Upload successful primary result
+        if: ${{ steps.compute.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v6-primary-${{ matrix.assignment.index }}
+          path: out/result-${{ matrix.assignment.index }}.json
+          if-no-files-found: error
+      - name: Upload controlled failure evidence
+        if: ${{ matrix.assignment.index == 4 && steps.compute.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: v6-failure-${{ matrix.assignment.index }}
+          path: failure/failure-4.json
+          if-no-files-found: error
+
+  repair-plan:
+    needs: [plan, primary-workers]
+    if: ${{ always() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      repair_count: ${{ steps.repair.outputs.repair_count }}
+      repair_indexes: ${{ steps.repair.outputs.repair_indexes }}
+      repair_assignments: ${{ steps.repair.outputs.repair_assignments }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: v6-recovery-plan
+          path: plan
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: v6-primary-*
+          path: primary-results
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: v6-failure-4
+          path: failure
+      - name: Verify controlled failure marker
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          marker = json.loads(Path('failure/failure-4.json').read_text())
+          assert marker['chunk_index'] == 4
+          assert marker['failure_stage'] == 'before-formal-compute'
+          assert marker['status'] == 'controlled-failure'
+          assert marker['local_compute_used'] is False
+          PY
+      - name: Plan only the missing shard repair
+        id: repair
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: >-
+          python experiments/zero_cost_compute_v0/pool_repair.py
+          --plan plan/recovery-plan.json
+          --results-dir primary-results
+          --output repair-plan/repair-plan.json
+          --github-output "$GITHUB_OUTPUT"
+      - name: Fail closed unless shard 4 is the only repair
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          plan = json.loads(Path('plan/recovery-plan.json').read_text())
+          repair = json.loads(Path('repair-plan/repair-plan.json').read_text())
+          assert repair['repair_indexes'] == [plan['failure_index']] == [4]
+          assert repair['repair_count'] == 1
+          assert repair['repair_assignments'] == [{
+              'index': 4,
+              'original_provider_id': 'github-actions-public',
+              'provider_id': 'wandbox-public',
+          }]
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v6-recovery-repair-plan
+          path: repair-plan/repair-plan.json
+          if-no-files-found: error
+
+  repair-workers:
+    needs: [plan, repair-plan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        repair: ${{ fromJSON(needs.repair-plan.outputs.repair_assignments) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Recompute only the missing shard on reserved provider
+        env:
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: >-
+          python experiments/zero_cost_compute_v0/repair_chunk.py
+          --n "${{ needs.plan.outputs.n }}"
+          --chunks "${{ needs.plan.outputs.chunks }}"
+          --index "${{ matrix.repair.index }}"
+          --original-provider "${{ matrix.repair.original_provider_id }}"
+          --provider "${{ matrix.repair.provider_id }}"
+          --compiler "$WANDBOX_COMPILER"
+          --output "out/result-${{ matrix.repair.index }}.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v6-repair-${{ matrix.repair.index }}
+          path: out/result-${{ matrix.repair.index }}.json
+          if-no-files-found: error
+
+  aggregate:
+    needs: [plan, primary-workers, repair-plan, repair-workers]
+    if: ${{ always() && needs.plan.result == 'success' && needs.repair-plan.result == 'success' && needs.repair-workers.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: v6-recovery-plan
+          path: plan
+      - uses: actions/download-artifact@v4
+        with:
+          name: v6-recovery-repair-plan
+          path: repair-plan
+      - uses: actions/download-artifact@v4
+        with:
+          name: v6-failure-4
+          path: failure
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: v6-primary-*
+          path: results
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: v6-repair-*
+          path: results
+          merge-multiple: true
+      - name: Aggregate seven primaries plus one repair
+        run: >-
+          python experiments/zero_cost_compute_v0/aggregate_results.py
+          --results-dir results
+          --output-dir evidence
+          --expected-n "${{ needs.plan.outputs.n }}"
+          --expected-chunks "${{ needs.plan.outputs.chunks }}"
+      - name: Verify exact V6 recovery semantics
+        run: >-
+          python experiments/zero_cost_compute_v0/verify_recovery.py
+          --plan plan/recovery-plan.json
+          --repair-plan repair-plan/repair-plan.json
+          --results-dir results
+          --aggregate-evidence evidence/verification.json
+          --run-id "$GITHUB_RUN_ID"
+          --output evidence/recovery-verification.json
+      - name: Build current provider catalog from repair evidence
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: >-
+          python experiments/zero_cost_compute_v0/provider_probe.py
+          --output evidence/provider-catalog.json
+          --wandbox-result results/result-4.json
+      - name: Preserve plans and failure marker in evidence
+        shell: bash
+        run: |
+          cp plan/recovery-plan.json evidence/recovery-plan.json
+          cp repair-plan/repair-plan.json evidence/repair-plan.json
+          cp failure/failure-4.json evidence/failure-4.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zero-cost-compute-v6-evidence
+          path: evidence
+          if-no-files-found: error
+          retention-days: 30
