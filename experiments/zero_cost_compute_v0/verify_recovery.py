@@ -47,7 +47,7 @@ def verify_recovery(
     primary_counts: Counter[str] = Counter()
     repair_counts: Counter[str] = Counter()
     recovered_indexes: list[int] = []
-    chosen: list[dict] = []
+    healthy_shard_repair_count = 0
 
     for index in range(chunks):
         valid = [item for item in by_index[index] if is_valid_result(item, n, chunks, index)]
@@ -78,11 +78,11 @@ def verify_recovery(
         else:
             expected_provider = assignments[index]
             if attempt != "primary":
+                healthy_shard_repair_count += 1
                 raise RuntimeError(f"healthy shard {index} was unnecessarily repaired")
             if provider_id != expected_provider or item.get("scheduled_provider_id") != expected_provider:
                 raise RuntimeError(f"primary shard {index} provider identity mismatch")
             primary_counts[provider_id] += 1
-        chosen.append(item)
 
     if len(results) != chunks:
         raise RuntimeError("final result set contains duplicate or extraneous shard results")
@@ -114,12 +114,12 @@ def verify_recovery(
         "recovered_indexes": recovered_indexes,
         "primary_provider_counts": dict(primary_counts),
         "repair_provider_counts": dict(repair_counts),
+        "healthy_shard_repair_count": healthy_shard_repair_count,
         "execution_provider_ids": sorted(set(primary_counts) | set(repair_counts)),
         "cross_provider_closed": True,
         "combined_sum": aggregate_evidence["combined_sum"],
         "expected_sum": expected_total,
         "local_formal_compute_percent": 0,
-        "github_primary_recomputed_count": 0,
     }
 
 
