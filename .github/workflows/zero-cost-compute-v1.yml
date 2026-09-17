@@ -1,0 +1,237 @@
+name: Zero Cash Cost External Compute V1 Closed Loop
+
+on:
+  push:
+    branches:
+      - experiment/zero-cost-compute-v1-closed-loop
+      - main
+  workflow_dispatch:
+    inputs:
+      n:
+        description: Workload upper bound
+        required: true
+        default: "40000000"
+      target_items_per_chunk:
+        description: Target items per automatically selected shard
+        required: true
+        default: "5000000"
+      max_chunks:
+        description: Maximum automatically selected shard count
+        required: true
+        default: "16"
+      inject_failure_index:
+        description: Primary shard to interrupt; use -1 for no injected failure
+        required: true
+        default: "2"
+
+permissions:
+  contents: read
+
+env:
+  DEFAULT_N: "40000000"
+  DEFAULT_TARGET_ITEMS_PER_CHUNK: "5000000"
+  DEFAULT_MAX_CHUNKS: "16"
+  DEFAULT_FAIL_PRIMARY_INDEX: "2"
+
+jobs:
+  plan:
+    name: external-plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      n: ${{ steps.plan.outputs.n }}
+      chunks: ${{ steps.plan.outputs.chunks }}
+      indexes: ${{ steps.plan.outputs.indexes }}
+      fail_index: ${{ steps.plan.outputs.fail_index }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Build automatic shard plan
+        id: plan
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+          N_INPUT: ${{ inputs.n }}
+          TARGET_INPUT: ${{ inputs.target_items_per_chunk }}
+          MAX_INPUT: ${{ inputs.max_chunks }}
+          FAIL_INPUT: ${{ inputs.inject_failure_index }}
+        run: |
+          N="${N_INPUT:-$DEFAULT_N}"
+          TARGET="${TARGET_INPUT:-$DEFAULT_TARGET_ITEMS_PER_CHUNK}"
+          MAX="${MAX_INPUT:-$DEFAULT_MAX_CHUNKS}"
+          FAIL_INDEX="${FAIL_INPUT:-$DEFAULT_FAIL_PRIMARY_INDEX}"
+          python experiments/zero_cost_compute_v0/plan_work.py \
+            --n "$N" \
+            --target-items-per-chunk "$TARGET" \
+            --max-chunks "$MAX" \
+            --fail-primary-index "$FAIL_INDEX" \
+            --output plan/plan.json \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Upload plan evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: v1-plan
+          path: plan/plan.json
+          if-no-files-found: error
+          retention-days: 30
+
+  primary:
+    name: primary-${{ matrix.index }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        index: ${{ fromJSON(needs.plan.outputs.indexes) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Inject controlled primary failure
+        if: ${{ matrix.index == fromJSON(needs.plan.outputs.fail_index) }}
+        run: |
+          echo "Intentionally interrupting primary shard ${{ matrix.index }} for recovery acceptance"
+          exit 17
+      - name: Run primary external compute shard
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: >-
+          python experiments/zero_cost_compute_v0/compute_chunk.py
+          --n "${{ needs.plan.outputs.n }}"
+          --chunks "${{ needs.plan.outputs.chunks }}"
+          --index "${{ matrix.index }}"
+          --attempt primary
+          --output "out/result-${{ matrix.index }}.json"
+      - name: Upload primary result
+        uses: actions/upload-artifact@v4
+        with:
+          name: primary-result-${{ matrix.index }}
+          path: out/result-${{ matrix.index }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+  repair_plan:
+    name: external-repair-plan
+    needs: [plan, primary]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      indexes: ${{ steps.repair_plan.outputs.indexes }}
+      repair_count: ${{ steps.repair_plan.outputs.repair_count }}
+      repair_indexes: ${{ steps.repair_plan.outputs.repair_indexes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Prepare primary result directory
+        run: mkdir -p primary-results
+      - name: Download available primary results
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: primary-result-*
+          path: primary-results
+          merge-multiple: true
+      - name: Detect missing or invalid shards
+        id: repair_plan
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: >-
+          python experiments/zero_cost_compute_v0/plan_repairs.py
+          --results-dir primary-results
+          --n "${{ needs.plan.outputs.n }}"
+          --chunks "${{ needs.plan.outputs.chunks }}"
+          --output repair-plan/repair-plan.json
+          --github-output "$GITHUB_OUTPUT"
+      - name: Upload repair plan evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: v1-repair-plan
+          path: repair-plan/repair-plan.json
+          if-no-files-found: error
+          retention-days: 30
+
+  repair:
+    name: repair-${{ matrix.index }}
+    needs: [plan, repair_plan]
+    if: ${{ always() && needs.repair_plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        index: ${{ fromJSON(needs.repair_plan.outputs.indexes) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Prepare no-op repair evidence
+        if: ${{ matrix.index < 0 }}
+        run: |
+          mkdir -p out
+          echo '{"repair_required":false}' > out/no-repair.json
+      - name: Run replacement external compute shard
+        if: ${{ matrix.index >= 0 }}
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: >-
+          python experiments/zero_cost_compute_v0/compute_chunk.py
+          --n "${{ needs.plan.outputs.n }}"
+          --chunks "${{ needs.plan.outputs.chunks }}"
+          --index "${{ matrix.index }}"
+          --attempt repair
+          --output "out/result-${{ matrix.index }}.json"
+      - name: Upload repair result
+        uses: actions/upload-artifact@v4
+        with:
+          name: repair-result-${{ matrix.index }}
+          path: out
+          if-no-files-found: error
+          retention-days: 7
+
+  aggregate:
+    name: external-aggregate-and-verify
+    needs: [plan, primary, repair_plan, repair]
+    if: ${{ always() && needs.plan.result == 'success' && needs.repair_plan.result == 'success' && needs.repair.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Run full unit suite externally
+        run: python -m unittest discover -s experiments/zero_cost_compute_v0/tests -v
+      - name: Prepare combined result directory
+        run: mkdir -p results/primary results/repair evidence
+      - name: Download primary results
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: primary-result-*
+          path: results/primary
+          merge-multiple: true
+      - name: Download repair results
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: repair-result-*
+          path: results/repair
+          merge-multiple: true
+      - name: Verify complete recovered result externally
+        run: >-
+          python experiments/zero_cost_compute_v0/aggregate_results.py
+          --results-dir results
+          --output-dir evidence
+          --expected-n "${{ needs.plan.outputs.n }}"
+          --expected-chunks "${{ needs.plan.outputs.chunks }}"
+      - name: Upload final V1 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: zero-cost-compute-v1-evidence
+          path: evidence
+          if-no-files-found: error
+          retention-days: 30
