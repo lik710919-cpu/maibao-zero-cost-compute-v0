@@ -10,6 +10,7 @@ from typing import Any
 from authorization_core import AuthorizationCore, AuthorizationRecord, AuthorizationState
 from authorization_ingress import AuthorizationIngressGuard
 from authorization_storage import JsonAuthorizationRegistry, WindowsCredentialVault
+from capability_activator import CapabilityActivator
 from gitlab_auth_adapter import GitLabAuthAdapter
 
 
@@ -24,13 +25,21 @@ class ProviderRegistration:
 class UnifiedAuthorizationService:
     """Single mandatory authorization entry point for all eligible platforms."""
 
-    def __init__(self, *, registrations: dict[str, ProviderRegistration], vault: Any, registry: Any) -> None:
+    def __init__(
+        self,
+        *,
+        registrations: dict[str, ProviderRegistration],
+        vault: Any,
+        registry: Any,
+        activation_probes: dict[str, Any] | None = None,
+    ) -> None:
         self.registrations = dict(registrations)
         self.vault = vault
         self.registry = registry
         self.guard = AuthorizationIngressGuard(registry=registry)
 
         adapters = {}
+        persistent_authorization = {}
         for provider_id, registration in self.registrations.items():
             if provider_id != registration.provider_id:
                 raise ValueError("provider registration key does not match provider_id")
@@ -43,8 +52,16 @@ class UnifiedAuthorizationService:
                 registered_with_unified_core=True,
             )
             adapters[provider_id] = registration.adapter
+            persistent_authorization[provider_id] = bool(registration.supports_persistent_authorization)
 
         self.core = AuthorizationCore(adapters=adapters, vault=vault, registry=registry)
+        self.activator = CapabilityActivator(
+            core=self.core,
+            registry=registry,
+            probes=dict(activation_probes or {}),
+            ingress_guard=self.guard,
+            persistent_authorization=persistent_authorization,
+        )
 
     def _registration(self, provider_id: str) -> ProviderRegistration:
         try:
@@ -92,6 +109,10 @@ class UnifiedAuthorizationService:
     def ensure(self, provider_id: str) -> AuthorizationRecord:
         self._assert_unified_route(provider_id)
         return self.core.ensure_usable(provider_id)
+
+    def activate(self, provider_id: str) -> dict[str, Any]:
+        self._assert_unified_route(provider_id)
+        return self.activator.activate(provider_id)
 
     def revoke(self, provider_id: str, *, explicit_user_revoke: bool) -> AuthorizationRecord:
         self._registration(provider_id)
