@@ -9,6 +9,7 @@ from authorization_core import AuthorizationState
 
 class AuthorizationRoute(str, Enum):
     UNIFIED_REQUIRED = "UNIFIED_REQUIRED"
+    DISCOVERY_REQUIRED = "DISCOVERY_REQUIRED"
     EXCEPTION_ALLOWED = "EXCEPTION_ALLOWED"
     NOT_REQUIRED = "NOT_REQUIRED"
 
@@ -26,7 +27,9 @@ class AuthorizationIngressGuard:
 
     Any provider that both requires authorization and supports a persistent
     one-time user authorization relationship must use the unified
-    authorization core. Private/parallel authorization paths are rejected.
+    authorization core. Unknown capability is also intercepted until research
+    proves whether persistent authorization exists. Private/parallel paths are
+    rejected while the provider is intercepted.
     """
 
     def __init__(self, registry: Any | None = None) -> None:
@@ -36,7 +39,7 @@ class AuthorizationIngressGuard:
         self,
         *,
         provider_id: str,
-        supports_persistent_authorization: bool,
+        supports_persistent_authorization: bool | None,
         authorization_required: bool,
     ) -> AuthorizationIngressDecision:
         if not provider_id:
@@ -47,6 +50,13 @@ class AuthorizationIngressGuard:
                 route=AuthorizationRoute.NOT_REQUIRED,
                 intercept=False,
                 reason="provider_does_not_require_authorization",
+            )
+        if supports_persistent_authorization is None:
+            return AuthorizationIngressDecision(
+                provider_id=provider_id,
+                route=AuthorizationRoute.DISCOVERY_REQUIRED,
+                intercept=True,
+                reason="persistent_authorization_capability_must_be_researched_before_routing",
             )
         if supports_persistent_authorization:
             return AuthorizationIngressDecision(
@@ -66,7 +76,7 @@ class AuthorizationIngressGuard:
         self,
         *,
         provider_id: str,
-        supports_persistent_authorization: bool,
+        supports_persistent_authorization: bool | None,
         authorization_required: bool,
         requested_route: str,
     ) -> AuthorizationIngressDecision:
@@ -84,13 +94,17 @@ class AuthorizationIngressGuard:
             raise RuntimeError(
                 f"{provider_id} supports persistent authorization and must enter through the unified authorization center"
             )
+        if decision.route == AuthorizationRoute.DISCOVERY_REQUIRED:
+            raise RuntimeError(
+                f"{provider_id} authorization capability is unknown; research and classify it before any authorization path is allowed"
+            )
         return decision
 
     def assert_adapter_registration_allowed(
         self,
         *,
         provider_id: str,
-        supports_persistent_authorization: bool,
+        supports_persistent_authorization: bool | None,
         authorization_required: bool,
         registered_with_unified_core: bool,
     ) -> AuthorizationIngressDecision:
@@ -99,6 +113,10 @@ class AuthorizationIngressGuard:
             supports_persistent_authorization=supports_persistent_authorization,
             authorization_required=authorization_required,
         )
+        if decision.route == AuthorizationRoute.DISCOVERY_REQUIRED:
+            raise RuntimeError(
+                f"{provider_id} cannot register an authorization adapter until persistent-authorization capability is classified"
+            )
         if decision.route == AuthorizationRoute.UNIFIED_REQUIRED and not registered_with_unified_core:
             raise RuntimeError(
                 f"{provider_id} cannot register a private authorization adapter outside AuthorizationCore"
@@ -109,8 +127,10 @@ class AuthorizationIngressGuard:
         self,
         *,
         provider_id: str,
-        supports_persistent_authorization: bool,
+        supports_persistent_authorization: bool | None,
     ):
+        if supports_persistent_authorization is None:
+            raise RuntimeError("provider authorization capability is still unknown")
         if not supports_persistent_authorization:
             return None
         if self.registry is None:
@@ -126,17 +146,20 @@ class AuthorizationIngressGuard:
 
 
 def authorization_policy_from_candidate(record: dict[str, Any]) -> AuthorizationIngressDecision:
-    """Convert provider discovery metadata into the mandatory auth route.
+    """Convert discovery metadata into the mandatory authorization route.
 
-    Discovery/onboarding code calls this before any provider-specific
-    authorization implementation is selected.
+    Fail-closed defaults are intentional: if a provider requires authorization
+    and research has not yet classified whether persistent authorization is
+    supported, it is intercepted into DISCOVERY_REQUIRED instead of silently
+    receiving a private authorization path.
     """
 
     guard = AuthorizationIngressGuard()
+    persistent = record.get("supports_persistent_authorization")
+    if persistent not in (True, False, None):
+        raise ValueError("supports_persistent_authorization must be true, false, or null")
     return guard.classify(
         provider_id=str(record["provider_id"]),
-        supports_persistent_authorization=bool(
-            record.get("supports_persistent_authorization", False)
-        ),
-        authorization_required=bool(record.get("authorization_required", False)),
+        supports_persistent_authorization=persistent,
+        authorization_required=bool(record.get("authorization_required", True)),
     )
