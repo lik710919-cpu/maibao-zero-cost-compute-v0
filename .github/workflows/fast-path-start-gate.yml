@@ -1,0 +1,30 @@
+name: Fast Path Start Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  fast-path-start-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify machine start gate receipt
+        shell: bash
+        run: |
+          mapfile -t changed < <(git diff --name-only "${{ github.event.pull_request.base.sha }}" HEAD)
+          args=()
+          for path in "${changed[@]}"; do
+            case "$path" in
+              .maibao/fast-path-start.json|.maibao/fast-path-close.json) continue ;;
+            esac
+            args+=(--changed-path "$path")
+          done
+          python .maibao/verify-fast-path-start-gate.py \
+            --receipt .maibao/fast-path-start.json \
+            --repository lik710919-cpu/maibao-zero-cost-compute-v0 \
+            --branch "${{ github.head_ref }}" \
+            "${args[@]}"
