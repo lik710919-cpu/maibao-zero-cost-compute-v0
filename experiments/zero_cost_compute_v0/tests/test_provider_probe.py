@@ -41,9 +41,13 @@ class ProviderProbeTests(unittest.TestCase):
         )
         self.assertEqual(catalog["live_provider_count"], 1)
         self.assertEqual(catalog["live_provider_ids"], ["github-actions-public"])
+        self.assertEqual(catalog["execution_provider_ids"], ["github-actions-public"])
         self.assertFalse(catalog["cross_provider_closed"])
         self.assertEqual(catalog["route"]["primary"], "github-actions-public")
         self.assertEqual(catalog["candidate_provider_ids"], ["netlify-free", "vercel-free"])
+        candidates = [p for p in catalog["providers"] if p["provider_id"] != "github-actions-public"]
+        self.assertTrue(all(not p["authorized"] for p in candidates))
+        self.assertTrue(all(not p["zero_cash_cost"] for p in candidates))
 
 
 if __name__ == "__main__":
