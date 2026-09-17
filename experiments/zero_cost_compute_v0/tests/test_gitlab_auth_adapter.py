@@ -30,7 +30,7 @@ class FakeRunner:
 
 
 class GitLabAuthAdapterTests(unittest.TestCase):
-    def test_begin_authorization_uses_official_device_flow(self):
+    def test_begin_authorization_uses_official_web_oauth_with_no_cli_choice_prompts(self):
         from gitlab_auth_adapter import GitLabAuthAdapter
 
         runner = FakeRunner()
@@ -39,10 +39,24 @@ class GitLabAuthAdapterTests(unittest.TestCase):
 
         self.assertEqual(
             runner.calls[0],
-            (["glab", "auth", "login", "--hostname", "gitlab.com", "--device"], False),
+            (
+                [
+                    "glab",
+                    "auth",
+                    "login",
+                    "--hostname",
+                    "gitlab.com",
+                    "--web",
+                    "--git-protocol",
+                    "https",
+                    "--container-registry-domains",
+                    "gitlab.com,gitlab.com:443,registry.gitlab.com",
+                ],
+                False,
+            ),
         )
         self.assertEqual(session.provider_id, "gitlab")
-        self.assertEqual(session.verification_uri, "https://gitlab.com/oauth/device")
+        self.assertEqual(session.verification_uri, "https://gitlab.com")
 
     def test_validate_identity_uses_authenticated_glab_api_and_returns_no_secret(self):
         from gitlab_auth_adapter import GitLabAuthAdapter
