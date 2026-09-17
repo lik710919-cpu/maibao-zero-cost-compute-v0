@@ -1,0 +1,88 @@
+name: Zero Cash Cost External Compute V4 Routing Failover
+
+on:
+  push:
+    branches:
+      - experiment/zero-cost-compute-v4-routing-failover
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  V4_N: "200000"
+  V4_CHUNKS: "2"
+  WANDBOX_COMPILER: "cpython-3.13.8"
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run full unit suite
+        run: python -m unittest discover -s experiments/zero_cost_compute_v0/tests -v
+
+  routed-shards:
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        index: [0, 1]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Route and execute shard
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+          INJECT_PRIMARY_FAILURE: ${{ matrix.index == 1 && 'github-actions-public' || '' }}
+        run: >-
+          python experiments/zero_cost_compute_v0/routed_chunk.py
+          --n "$V4_N" --chunks "$V4_CHUNKS" --index "${{ matrix.index }}"
+          --compiler "$WANDBOX_COMPILER"
+          --inject-provider-failure "$INJECT_PRIMARY_FAILURE"
+          --output "out/result-${{ matrix.index }}.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v4-result-${{ matrix.index }}
+          path: out/result-${{ matrix.index }}.json
+          if-no-files-found: error
+
+  aggregate:
+    needs: routed-shards
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: v4-result-*
+          path: results
+          merge-multiple: true
+      - name: Verify routed and recovered multiprovider task
+        run: >-
+          python experiments/zero_cost_compute_v0/aggregate_results.py
+          --results-dir results --output-dir evidence
+          --expected-n "$V4_N" --expected-chunks "$V4_CHUNKS"
+      - name: Verify dispatch evidence
+        run: >-
+          python experiments/zero_cost_compute_v0/verify_dispatch.py
+          --results-dir results --output evidence/dispatch-verification.json
+      - name: Build provider catalog from actual fallback result
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: >-
+          python experiments/zero_cost_compute_v0/provider_probe.py
+          --output evidence/provider-catalog.json
+          --wandbox-result results/result-1.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zero-cost-compute-v4-evidence
+          path: evidence
+          if-no-files-found: error
+          retention-days: 30
