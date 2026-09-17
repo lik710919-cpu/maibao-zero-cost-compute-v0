@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 from authorization_ingress import AuthorizationRoute, authorization_policy_from_candidate
+from authorization_profiles import apply_profile
 from provider_qualification import ProviderCandidate, qualify_candidate
 
 
@@ -83,7 +84,8 @@ def build_growth_report(records: list[dict]) -> dict:
     adapter_candidates = []
     research_candidates = []
 
-    for record in records:
+    for raw_record in records:
+        record = apply_profile(raw_record)
         candidate = _candidate_from_record(record)
         result = qualify_candidate(candidate)
         groups[result.state].append(candidate.provider_id)
@@ -109,6 +111,7 @@ def build_growth_report(records: list[dict]) -> dict:
         details.append(
             {
                 "provider_id": candidate.provider_id,
+                "authorization_provider_id": record["authorization_provider_id"],
                 "state": result.state,
                 "lifecycle_state": lifecycle_state,
                 "reasons": list(result.reasons),
@@ -122,8 +125,8 @@ def build_growth_report(records: list[dict]) -> dict:
                 "advertised_monthly_capacity_minutes": record.get("advertised_monthly_capacity_minutes"),
                 "advertised_monthly_core_hours": record.get("advertised_monthly_core_hours"),
                 "capacity_visibility": record.get("capacity_visibility", "unknown"),
-                "authorization_required": record.get("authorization_required", True),
-                "supports_persistent_authorization": record.get("supports_persistent_authorization"),
+                "authorization_required": record["authorization_required"],
+                "supports_persistent_authorization": record["supports_persistent_authorization"],
                 "authorization_route": auth_decision.route.value,
                 "authorization_intercept": auth_decision.intercept,
                 "authorization_reason": auth_decision.reason,
