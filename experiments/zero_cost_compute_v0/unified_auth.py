@@ -115,6 +115,12 @@ class UnifiedAuthorizationService:
         self._assert_unified_route(provider_id)
         return self.activator.activate(provider_id)
 
+    def onboard(self, provider_id: str) -> dict[str, Any]:
+        record = self.begin(provider_id)
+        if record.state != AuthorizationState.AUTHORIZED or record.revoked_by_user:
+            raise RuntimeError("provider authorization did not complete; activation is blocked")
+        return self.activate(provider_id)
+
     def revoke(self, provider_id: str, *, explicit_user_revoke: bool) -> AuthorizationRecord:
         self._registration(provider_id)
         if not explicit_user_revoke:
@@ -192,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Maibao unified authorization center")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    for name in ("begin", "status", "ensure", "activate"):
+    for name in ("begin", "status", "ensure", "activate", "onboard"):
         command = subparsers.add_parser(name)
         command.add_argument("--provider", required=True)
 
@@ -216,6 +222,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "activate":
         _json_print(service.activate(args.provider))
+        return 0
+    if args.command == "onboard":
+        _json_print(service.onboard(args.provider))
         return 0
     if args.command == "revoke":
         service.revoke(args.provider, explicit_user_revoke=args.explicit_user_revoke)
