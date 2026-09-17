@@ -26,6 +26,33 @@ def fail(message: str) -> None:
     raise RuntimeError(message)
 
 
+def provider_id_for(item: dict) -> str:
+    explicit = str(item.get("provider_id", "")).strip()
+    if explicit:
+        return explicit
+    if item.get("runner_environment") == "github-hosted":
+        return "github-actions-public"
+    return ""
+
+
+def provider_context_is_valid(item: dict) -> bool:
+    provider_id = provider_id_for(item)
+    if provider_id == "github-actions-public":
+        return (
+            item.get("runner_environment") == "github-hosted"
+            and item.get("repo_visibility") == "public"
+        )
+    if provider_id == "wandbox-public":
+        evidence = str(item.get("provider_evidence", ""))
+        return (
+            item.get("runner_environment") == "wandbox-public-api"
+            and item.get("repo_visibility") == "public"
+            and evidence.startswith("real:wandbox:")
+            and str(item.get("wandbox_status", "0")) == "0"
+        )
+    return False
+
+
 def is_valid_result(item: dict, expected_n: int, expected_chunks: int, expected_index: int) -> bool:
     try:
         start, end = partition_range(expected_n, expected_chunks, expected_index)
@@ -38,8 +65,7 @@ def is_valid_result(item: dict, expected_n: int, expected_chunks: int, expected_
             and item.get("range_end") == end
             and item.get("partial_sum") == sum_squares_formula(start, end)
             and attempt in {"primary", "repair"}
-            and item.get("runner_environment") == "github-hosted"
-            and item.get("repo_visibility") == "public"
+            and provider_context_is_valid(item)
             and item.get("local_compute_used") is False
         )
     except (TypeError, ValueError, ZeroDivisionError):
@@ -111,14 +137,24 @@ def verify_results(result_paths: list[Path], expected_n: int | None = None, expe
     if combined != expected_total:
         fail("combined result does not equal closed-form result")
 
+    execution_provider_ids = sorted({provider_id_for(item) for item in chosen})
+    if "" in execution_provider_ids:
+        fail("worker result missing provider identity")
     hostnames = sorted({item.get("hostname", "") for item in chosen})
     runner_names = sorted({item.get("runner_name", "") for item in chosen})
     primary_valid_count = sum(1 for item in chosen if item.get("attempt", "primary") == "primary")
     repaired_result_count = len(recovered_indexes)
+    if len(execution_provider_ids) >= 2:
+        formal_compute_location = "external-multiprovider"
+    elif execution_provider_ids == ["github-actions-public"]:
+        formal_compute_location = "external-github-hosted-only"
+    else:
+        formal_compute_location = f"external-{execution_provider_ids[0]}"
+
     return {
         "status": "PASS",
         "verified_at": datetime.now(timezone.utc).isoformat(),
-        "formal_compute_location": "external-github-hosted-only",
+        "formal_compute_location": formal_compute_location,
         "local_formal_compute_percent": 0,
         "repository_visibility": "public",
         "automatic_chunk_count": expected_chunks,
@@ -126,6 +162,9 @@ def verify_results(result_paths: list[Path], expected_n: int | None = None, expe
         "primary_valid_count": primary_valid_count,
         "repaired_result_count": repaired_result_count,
         "recovered_indexes": recovered_indexes,
+        "execution_provider_ids": execution_provider_ids,
+        "execution_provider_count": len(execution_provider_ids),
+        "cross_provider_closed": len(execution_provider_ids) >= 2,
         "n": expected_n,
         "combined_sum": combined,
         "expected_sum": expected_total,
@@ -159,8 +198,10 @@ def main() -> None:
         "",
         "- Status: PASS",
         "- Local formal compute: 0%",
-        "- Formal compute: GitHub-hosted external runners only",
+        f"- Formal compute: {evidence['formal_compute_location']}",
         "- Repository visibility: public",
+        f"- Execution providers: {evidence['execution_provider_ids']}",
+        f"- Cross-provider closed: {evidence['cross_provider_closed']}",
         f"- Automatic chunk count: {evidence['automatic_chunk_count']}",
         f"- Primary valid results: {evidence['primary_valid_count']}",
         f"- Repaired results: {evidence['repaired_result_count']}",
@@ -175,8 +216,8 @@ def main() -> None:
     for item in evidence["workers"]:
         lines.append(
             f"- chunk {item['chunk_index']}: {item['range_start']}..{item['range_end']}; "
-            f"attempt={item.get('attempt', 'primary')}; runner={item.get('runner_name', '')}; "
-            f"duration={item.get('duration_seconds', 0)}s"
+            f"provider={provider_id_for(item)}; attempt={item.get('attempt', 'primary')}; "
+            f"runner={item.get('runner_name', '')}; duration={item.get('duration_seconds', 0)}s"
         )
     (output_dir / "verification.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(json.dumps(evidence, indent=2, sort_keys=True))
