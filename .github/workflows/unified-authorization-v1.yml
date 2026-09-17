@@ -1,0 +1,20 @@
+name: Unified Authorization Layer V1
+
+on:
+  push:
+    branches:
+      - experiment/unified-authorization-layer-v1
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run full unit suite
+        run: python -m unittest discover -s experiments/zero_cost_compute_v0/tests -v
