@@ -62,6 +62,7 @@ def main() -> None:
     parser.add_argument("--n", type=int, required=True)
     parser.add_argument("--chunks", type=int, required=True)
     parser.add_argument("--index", type=int, required=True)
+    parser.add_argument("--attempt", choices=("primary", "repair"), default="primary")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
@@ -84,6 +85,7 @@ def main() -> None:
         "range_start": start,
         "range_end": end,
         "partial_sum": partial_sum,
+        "attempt": args.attempt,
         "hostname": socket.gethostname(),
         "platform_node": platform.node(),
         "cpu_count": os.cpu_count(),
