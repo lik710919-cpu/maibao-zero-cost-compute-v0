@@ -37,15 +37,11 @@ def qualify_candidate(candidate: ProviderCandidate) -> QualificationResult:
             "developer_environment",
             ("developer_environment_not_general_pool",),
         )
-    if (
-        not candidate.terms_scope_confirmed
-        or not candidate.formal_pool_eligible
-        or candidate.terms_scope != "general_compute"
-    ):
+    if not candidate.terms_scope_confirmed:
         return QualificationResult(
             candidate.provider_id,
             "policy_gate",
-            ("terms_scope_not_confirmed_for_general_formal_compute",),
+            ("terms_scope_not_confirmed",),
         )
     if (
         candidate.external_authorization_required
@@ -54,4 +50,10 @@ def qualify_candidate(candidate: ProviderCandidate) -> QualificationResult:
         or not candidate.hard_quota_stop
     ):
         return QualificationResult(candidate.provider_id, "manual_gate", ("cash_or_authorization_gate",))
+    if not candidate.formal_pool_eligible or candidate.terms_scope != "general_compute":
+        return QualificationResult(
+            candidate.provider_id,
+            "policy_gate",
+            ("terms_scope_not_eligible_for_general_formal_compute",),
+        )
     return QualificationResult(candidate.provider_id, "auto_eligible", ("policy_safe_fail_closed_zero_cash_quota",))
