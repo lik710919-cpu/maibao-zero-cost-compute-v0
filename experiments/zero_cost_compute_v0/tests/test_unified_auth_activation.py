@@ -75,8 +75,13 @@ class FakeAdapter:
         return None
 
 
+class PendingAdapter(FakeAdapter):
+    def poll_authorization(self):
+        return {"authorized": False}
+
+
 class UnifiedAuthorizationActivationTests(unittest.TestCase):
-    def test_activation_runs_only_through_capability_activator_and_persists_acceptance(self):
+    def build_service(self, *, adapter=None, probe=None):
         from unified_auth import ProviderRegistration, UnifiedAuthorizationService
 
         vault = MemoryVault()
@@ -85,7 +90,7 @@ class UnifiedAuthorizationActivationTests(unittest.TestCase):
             registrations={
                 "fake": ProviderRegistration(
                     provider_id="fake",
-                    adapter=FakeAdapter(),
+                    adapter=adapter or FakeAdapter(),
                     authorization_required=True,
                     supports_persistent_authorization=True,
                 )
@@ -93,15 +98,20 @@ class UnifiedAuthorizationActivationTests(unittest.TestCase):
             vault=vault,
             registry=registry,
             activation_probes={
-                "fake": lambda record: {
+                "fake": probe
+                or (lambda record: {
                     "verified": True,
                     "provider_id": "fake-external-compute",
                     "pipeline_id": 77,
                     "job_id": 88,
                     "local_compute_used": False,
-                }
+                })
             },
         )
+        return service, vault, registry
+
+    def test_activation_runs_only_through_capability_activator_and_persists_acceptance(self):
+        service, vault, registry = self.build_service()
         service.begin("fake")
 
         result = service.activate("fake")
@@ -133,6 +143,28 @@ class UnifiedAuthorizationActivationTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             service.activate("fake")
         self.assertFalse(registry.get("fake").acceptance_complete)
+
+    def test_onboard_authorizes_then_runs_real_activation_path(self):
+        service, vault, registry = self.build_service()
+
+        result = service.onboard("fake")
+
+        self.assertTrue(result["live_active"])
+        self.assertTrue(registry.get("fake").acceptance_complete)
+        self.assertEqual(registry.get("fake").state.value, "AUTHORIZED")
+
+    def test_onboard_never_activates_while_authorization_is_pending(self):
+        called = []
+        service, vault, registry = self.build_service(
+            adapter=PendingAdapter(),
+            probe=lambda record: called.append(record),
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "authorization did not complete"):
+            service.onboard("fake")
+
+        self.assertEqual(called, [])
+        self.assertEqual(registry.get("fake").state.value, "AUTHORIZING")
 
 
 if __name__ == "__main__":
