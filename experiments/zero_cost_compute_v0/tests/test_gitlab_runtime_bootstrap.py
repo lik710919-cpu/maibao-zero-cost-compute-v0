@@ -117,7 +117,6 @@ class GitLabRuntimeBootstrapTests(unittest.TestCase):
         from gitlab_auth_adapter import GitLabAuthAdapter
 
         runner = FakeRunner()
-        # GET missing + POST create for .gitlab-ci.yml, then worker file.
         runner.queue(FakeResult(returncode=1, stderr="404"))
         runner.queue(FakeResult(stdout="{}"))
         runner.queue(FakeResult(returncode=1, stderr="404"))
@@ -199,6 +198,51 @@ class GitLabRuntimeBootstrapTests(unittest.TestCase):
         create_call = runner.calls[0][0]
         self.assertIn("projects/78/triggers", create_call)
         self.assertIn("POST", create_call)
+
+    def test_unbound_runtime_creation_auto_bootstraps_project_and_bundle(self):
+        from gitlab_auth_adapter import GitLabAuthAdapter
+
+        runner = FakeRunner()
+        runner.queue(FakeResult(stdout=json.dumps({"id": 501, "token": "trigger-secret"})))
+        vault = FakeVault()
+        adapter = GitLabAuthAdapter(runner=runner, project_name="maibao-external-compute")
+        calls = []
+
+        adapter.ensure_project = lambda name: {
+            "project_id": "78",
+            "path_with_namespace": "mai-user/maibao-external-compute",
+            "default_branch": "main",
+        }
+        adapter.ensure_compute_bundle = lambda **kwargs: calls.append(kwargs) or {
+            "project_id": "78",
+            "synced_files": 2,
+            "files": [".gitlab-ci.yml", "experiments/zero_cost_compute_v0/gitlab_worker.py"],
+        }
+
+        metadata = adapter.create_runtime_credentials(vault)
+
+        self.assertEqual(metadata["bound_resource"], "78")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["project_id"], "78")
+        self.assertEqual(calls[0]["default_branch"], "main")
+        self.assertTrue(vault.exists(metadata["runtime_credential_ref"]))
+
+    def test_remote_runtime_revoke_uses_nonsecret_trigger_id_and_project_id(self):
+        from gitlab_auth_adapter import GitLabAuthAdapter
+
+        runner = FakeRunner()
+        runner.queue(FakeResult(stdout="{}"))
+        adapter = GitLabAuthAdapter(runner=runner)
+
+        adapter.revoke_remote_runtime_credentials(
+            runtime_credential_id="501",
+            bound_resource="78",
+        )
+
+        call = runner.calls[0][0]
+        self.assertIn("projects/78/triggers/501", call)
+        self.assertIn("DELETE", call)
+        self.assertNotIn("token", " ".join(call).lower())
 
     def test_free_compatible_bootstrap_never_uses_project_access_token_endpoint(self):
         from gitlab_auth_adapter import GitLabAuthAdapter
