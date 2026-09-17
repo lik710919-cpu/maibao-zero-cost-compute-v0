@@ -1,5 +1,6 @@
-from dataclasses import dataclass
 from collections import Counter
+from dataclasses import dataclass
+from fractions import Fraction
 
 
 @dataclass(frozen=True)
@@ -37,31 +38,30 @@ def assign_shards(shard_count: int, policies: list[ProviderPolicy]) -> list[dict
     assignments: list[dict] = []
 
     while len(assignments) < shard_count:
-        made_progress = False
+        eligible: list[ProviderPolicy] = []
         for policy in ordered:
-            remaining_budget = (
-                shard_count
-                if policy.max_tasks_per_run is None
-                else policy.max_tasks_per_run - assigned_counts[policy.provider_id]
-            )
-            if remaining_budget <= 0:
+            assigned = assigned_counts[policy.provider_id]
+            if policy.max_tasks_per_run is not None and assigned >= policy.max_tasks_per_run:
                 continue
+            eligible.append(policy)
 
-            take = min(policy.capacity, remaining_budget, shard_count - len(assignments))
-            for _ in range(take):
-                assignments.append(
-                    {
-                        "index": len(assignments),
-                        "provider_id": policy.provider_id,
-                    }
-                )
-                assigned_counts[policy.provider_id] += 1
-                made_progress = True
-
-            if len(assignments) == shard_count:
-                break
-
-        if not made_progress:
+        if not eligible:
             raise RuntimeError("provider task budgets cannot cover all shards")
+
+        selected = min(
+            eligible,
+            key=lambda policy: (
+                Fraction(assigned_counts[policy.provider_id] + 1, policy.capacity),
+                policy.priority,
+                policy.provider_id,
+            ),
+        )
+        assignments.append(
+            {
+                "index": len(assignments),
+                "provider_id": selected.provider_id,
+            }
+        )
+        assigned_counts[selected.provider_id] += 1
 
     return assignments
