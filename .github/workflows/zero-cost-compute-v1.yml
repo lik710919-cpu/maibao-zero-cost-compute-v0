@@ -228,6 +228,13 @@ jobs:
           --output-dir evidence
           --expected-n "${{ needs.plan.outputs.n }}"
           --expected-chunks "${{ needs.plan.outputs.chunks }}"
+      - name: Probe current external provider catalog
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: >-
+          python experiments/zero_cost_compute_v0/provider_probe.py
+          --output evidence/provider-catalog.json
       - name: Upload final V1 evidence
         uses: actions/upload-artifact@v4
         with:
