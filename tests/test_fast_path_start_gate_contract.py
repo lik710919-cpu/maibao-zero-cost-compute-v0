@@ -86,3 +86,21 @@ def test_wrong_authority_blob_fails_closed(tmp_path: Path):
     result = run_verify(tmp_path, receipt)
     assert result.returncode == 2
     assert "AUTHORITY_BLOB_MISMATCH" in result.stderr
+
+
+def test_catch_up_audit_may_omit_sha256_only_with_explicit_reason(tmp_path: Path):
+    receipt = valid_receipt()
+    receipt.pop("authority_digests")
+    receipt["catch_up_audit"] = True
+    receipt["catch_up_reason"] = "task started before Fast Path machine gate activation; reclassified before further construction"
+    result = run_verify(tmp_path, receipt)
+    assert result.returncode == 0, result.stderr
+
+
+def test_catch_up_audit_without_reason_fails_closed(tmp_path: Path):
+    receipt = valid_receipt()
+    receipt.pop("authority_digests")
+    receipt["catch_up_audit"] = True
+    result = run_verify(tmp_path, receipt)
+    assert result.returncode == 2
+    assert "CATCH_UP_REASON_REQUIRED" in result.stderr
