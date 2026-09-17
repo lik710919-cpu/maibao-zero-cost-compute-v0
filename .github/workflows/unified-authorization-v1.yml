@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - experiment/unified-authorization-layer-v1
+      - experiment/unified-authorization-live-activation-v1
       - main
   workflow_dispatch:
 
