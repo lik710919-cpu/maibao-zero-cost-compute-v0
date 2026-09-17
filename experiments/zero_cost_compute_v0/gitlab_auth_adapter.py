@@ -93,12 +93,23 @@ class GitLabAuthAdapter:
 
     def begin_authorization(self) -> AuthorizationSession:
         self._run(
-            ["glab", "auth", "login", "--hostname", self.hostname, "--device"],
+            [
+                "glab",
+                "auth",
+                "login",
+                "--hostname",
+                self.hostname,
+                "--web",
+                "--git-protocol",
+                "https",
+                "--container-registry-domains",
+                "gitlab.com,gitlab.com:443,registry.gitlab.com",
+            ],
             capture=False,
         )
         return AuthorizationSession(
             provider_id=self.provider_id,
-            verification_uri=f"https://{self.hostname}/oauth/device",
+            verification_uri=f"https://{self.hostname}",
         )
 
     def poll_authorization(self) -> dict[str, Any]:
