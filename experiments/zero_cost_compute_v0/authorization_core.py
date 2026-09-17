@@ -31,6 +31,7 @@ class AuthorizationRecord:
     scopes: tuple[str, ...] = ()
     user_credential_ref: str | None = None
     runtime_credential_ref: str | None = None
+    runtime_credential_id: str | None = None
     revoked_by_user: bool = False
     authorized_at: str | None = None
     last_verified_at: str | None = None
@@ -202,10 +203,14 @@ class AuthorizationCore:
             self.registry.put(degraded)
             return degraded
 
+        runtime_id = runtime.get("runtime_credential_id")
+        bound_resource = runtime.get("bound_resource")
         authorized = replace(
             refreshing,
             state=AuthorizationState.AUTHORIZED,
             runtime_credential_ref=str(runtime_ref),
+            runtime_credential_id=str(runtime_id) if runtime_id is not None else refreshing.runtime_credential_id,
+            bound_resource=str(bound_resource) if bound_resource is not None else refreshing.bound_resource,
             revoked_by_user=False,
             last_error=None,
         )
@@ -221,10 +226,15 @@ class AuthorizationCore:
                 state=AuthorizationState.UNAUTHORIZED,
             )
 
-        adapter.revoke_runtime_credentials(record.runtime_credential_ref, self.vault)
-        if record.user_credential_ref and self.vault.exists(record.user_credential_ref):
-            self.vault.delete(record.user_credential_ref)
-        adapter.revoke_user_authorization()
+        runtime_ref = record.runtime_credential_ref
+        user_ref = record.user_credential_ref
+
+        # Explicit user revocation is local-first and terminal. Remote cleanup is
+        # best-effort and cannot leave the provider usable if the platform is down.
+        if runtime_ref and self.vault.exists(runtime_ref):
+            self.vault.delete(runtime_ref)
+        if user_ref and self.vault.exists(user_ref):
+            self.vault.delete(user_ref)
 
         revoked = replace(
             record,
@@ -236,4 +246,18 @@ class AuthorizationCore:
             last_error=None,
         )
         self.registry.put(revoked)
+
+        remote_incomplete = False
+        try:
+            adapter.revoke_runtime_credentials(runtime_ref, self.vault)
+        except Exception:
+            remote_incomplete = True
+        try:
+            adapter.revoke_user_authorization()
+        except Exception:
+            remote_incomplete = True
+
+        if remote_incomplete:
+            revoked = replace(revoked, last_error="remote_revocation_incomplete")
+            self.registry.put(revoked)
         return revoked
