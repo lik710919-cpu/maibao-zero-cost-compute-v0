@@ -19,6 +19,18 @@ class CapacitySchedulerTests(unittest.TestCase):
         self.assertEqual(counts["github-actions-public"], 7)
         self.assertEqual(assignments[4]["provider_id"], "wandbox-public")
 
+    def test_scheduler_uses_projected_normalized_load_not_capacity_batches(self):
+        import capacity_scheduler
+        policies = [
+            capacity_scheduler.ProviderPolicy("a", capacity=3, max_tasks_per_run=None, priority=0),
+            capacity_scheduler.ProviderPolicy("b", capacity=2, max_tasks_per_run=None, priority=1),
+        ]
+        assignments = capacity_scheduler.assign_shards(5, policies)
+        self.assertEqual(
+            [item["provider_id"] for item in assignments],
+            ["a", "b", "a", "a", "b"],
+        )
+
     def test_scheduler_is_deterministic(self):
         import capacity_scheduler
         policies = [
