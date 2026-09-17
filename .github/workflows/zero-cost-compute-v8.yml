@@ -1,0 +1,53 @@
+name: Zero Cash Cost External Compute V8 GitLab Adapter
+
+on:
+  push:
+    branches:
+      - experiment/zero-cost-compute-v8-gitlab-adapter
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run full unit suite
+        run: python -m unittest discover -s experiments/zero_cost_compute_v0/tests -v
+
+  adapter-readiness:
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build GitLab adapter readiness evidence
+        run: >-
+          python experiments/zero_cost_compute_v0/gitlab_readiness.py
+          --repository-root .
+          --output evidence/gitlab-adapter-readiness.json
+      - name: Verify fail-closed activation state
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          evidence = json.loads(Path('evidence/gitlab-adapter-readiness.json').read_text())
+          assert evidence['stage_a_adapter_ready'] is True
+          assert evidence['stage_b_live_active'] is False
+          assert evidence['local_formal_compute_percent'] == 0
+          assert evidence['provider_id'] == 'gitlab-hosted-runners'
+          assert 'runtime_credentials' in evidence['live_blockers']
+          serialized = json.dumps(evidence['dispatch_preview']).lower()
+          assert 'token' not in serialized
+          assert 'secret' not in serialized
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zero-cost-compute-v8-gitlab-adapter-readiness
+          path: evidence/gitlab-adapter-readiness.json
+          if-no-files-found: error

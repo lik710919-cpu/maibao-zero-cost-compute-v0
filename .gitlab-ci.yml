@@ -1,0 +1,24 @@
+stages:
+  - compute
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "trigger" && $MAIBAO_PROVIDER_ID == "gitlab-hosted-runners"'
+    - when: never
+
+formal_shard:
+  stage: compute
+  image: python:3.13-slim
+  tags:
+    - saas-linux-small-amd64
+  timeout: 5m
+  interruptible: true
+  script:
+    - test "$MAIBAO_TASK_KIND" = "sum_squares"
+    - python experiments/zero_cost_compute_v0/gitlab_worker.py --index "$MAIBAO_CHUNK_INDEX" --start "$MAIBAO_RANGE_START" --end "$MAIBAO_RANGE_END" --nonce "$MAIBAO_NONCE" --output out/result.json
+  artifacts:
+    when: on_success
+    access: maintainer
+    expire_in: 1 day
+    paths:
+      - out/result.json
