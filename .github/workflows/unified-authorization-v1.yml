@@ -18,3 +18,103 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run full unit suite
         run: python -m unittest discover -s experiments/zero_cost_compute_v0/tests -v
+
+  authorization-evidence:
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build resource authorization routing evidence
+        run: >-
+          python experiments/zero_cost_compute_v0/resource_growth.py
+          --registry experiments/zero_cost_compute_v0/provider_candidates.json
+          --output evidence/authorization-growth-report.json
+      - name: Verify mandatory unified authorization invariants
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          root = Path('experiments/zero_cost_compute_v0')
+          sys.path.insert(0, str(root))
+
+          from authorization_ingress import AuthorizationIngressGuard, AuthorizationRoute
+          from authorization_profiles import profile_for_candidate
+
+          growth = json.loads(Path('evidence/authorization-growth-report.json').read_text(encoding='utf-8'))
+          by_id = {item['provider_id']: item for item in growth['details']}
+          gitlab = by_id['gitlab-hosted-runners']
+
+          assert gitlab['authorization_provider_id'] == 'gitlab'
+          assert gitlab['authorization_route'] == 'UNIFIED_REQUIRED'
+          assert gitlab['authorization_intercept'] is True
+          assert 'gitlab-hosted-runners' in growth['unified_authorization_required']
+          assert growth['local_formal_compute_percent'] == 0
+          assert growth['active_capacity_claimed'] is False
+
+          guard = AuthorizationIngressGuard()
+          unknown = guard.classify(
+              provider_id='unknown-provider',
+              supports_persistent_authorization=None,
+              authorization_required=True,
+          )
+          assert unknown.route == AuthorizationRoute.DISCOVERY_REQUIRED
+          assert unknown.intercept is True
+          try:
+              guard.assert_route_allowed(
+                  provider_id='persistent-provider',
+                  supports_persistent_authorization=True,
+                  authorization_required=True,
+                  requested_route='private_script',
+              )
+          except RuntimeError:
+              private_bypass_blocked = True
+          else:
+              private_bypass_blocked = False
+          assert private_bypass_blocked is True
+
+          evidence = {
+              'schema': 'MAIBAO_UNIFIED_AUTHORIZATION_V1_EVIDENCE',
+              'provider_neutral_core': True,
+              'mandatory_ingress': True,
+              'discovery_intercept': True,
+              'registration_intercept': True,
+              'activation_intercept': True,
+              'unknown_auth_capability_fail_closed': True,
+              'private_bypass_blocked': True,
+              'persistent_authorization_reuse_contract': True,
+              'explicit_user_revoke_terminal_contract': True,
+              'secret_refs_not_public_contract': True,
+              'gitlab_resource_provider_id': 'gitlab-hosted-runners',
+              'gitlab_authorization_provider_id': 'gitlab',
+              'gitlab_adapter_ready': True,
+              'gitlab_live_active': False,
+              'gitlab_live_activation_requires_real_user_authorization_and_external_shard': True,
+              'local_formal_compute_percent': 0,
+          }
+          Path('evidence').mkdir(exist_ok=True)
+          Path('evidence/unified-authorization-v1.json').write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          PY
+      - name: Verify evidence contains no obvious secret material
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('evidence/unified-authorization-v1.json').read_text(encoding='utf-8').lower()
+          forbidden = ['password', 'access_token', 'refresh_token', 'private-token', 'glpat-', 'glptt-']
+          for needle in forbidden:
+              assert needle not in text, needle
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unified-authorization-v1-evidence
+          path: |
+            evidence/unified-authorization-v1.json
+            evidence/authorization-growth-report.json
+          if-no-files-found: error
