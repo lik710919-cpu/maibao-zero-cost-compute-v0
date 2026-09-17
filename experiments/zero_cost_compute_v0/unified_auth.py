@@ -12,6 +12,7 @@ from authorization_ingress import AuthorizationIngressGuard
 from authorization_storage import JsonAuthorizationRegistry, WindowsCredentialVault
 from capability_activator import CapabilityActivator
 from gitlab_auth_adapter import GitLabAuthAdapter
+from gitlab_live_activation import GitLabLiveActivationProbe
 
 
 @dataclass(frozen=True)
@@ -155,13 +156,7 @@ def default_state_dir() -> Path:
     return Path.home() / ".local" / "state" / "maibao" / "authorization-center"
 
 
-def build_default_service(*, state_dir: str | Path | None = None) -> UnifiedAuthorizationService:
-    if os.name != "nt":
-        raise RuntimeError("production unified authorization V1 currently requires Windows Credential Manager")
-    root = Path(state_dir) if state_dir is not None else default_state_dir()
-    registry = JsonAuthorizationRegistry(root / "authorization-registry.json")
-    vault = WindowsCredentialVault(prefix="maibao-auth")
-    gitlab = GitLabAuthAdapter()
+def build_gitlab_service(*, vault: Any, registry: Any, gitlab: GitLabAuthAdapter) -> UnifiedAuthorizationService:
     return UnifiedAuthorizationService(
         registrations={
             "gitlab": ProviderRegistration(
@@ -173,7 +168,20 @@ def build_default_service(*, state_dir: str | Path | None = None) -> UnifiedAuth
         },
         vault=vault,
         registry=registry,
+        activation_probes={
+            "gitlab": GitLabLiveActivationProbe(vault=vault, runner=gitlab.runner),
+        },
     )
+
+
+def build_default_service(*, state_dir: str | Path | None = None) -> UnifiedAuthorizationService:
+    if os.name != "nt":
+        raise RuntimeError("production unified authorization V1 currently requires Windows Credential Manager")
+    root = Path(state_dir) if state_dir is not None else default_state_dir()
+    registry = JsonAuthorizationRegistry(root / "authorization-registry.json")
+    vault = WindowsCredentialVault(prefix="maibao-auth")
+    gitlab = GitLabAuthAdapter()
+    return build_gitlab_service(vault=vault, registry=registry, gitlab=gitlab)
 
 
 def _json_print(payload: dict[str, Any]) -> None:
@@ -184,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Maibao unified authorization center")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    for name in ("begin", "status", "ensure"):
+    for name in ("begin", "status", "ensure", "activate"):
         command = subparsers.add_parser(name)
         command.add_argument("--provider", required=True)
 
@@ -205,6 +213,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "ensure":
         service.ensure(args.provider)
         _json_print(service.public_status(args.provider))
+        return 0
+    if args.command == "activate":
+        _json_print(service.activate(args.provider))
         return 0
     if args.command == "revoke":
         service.revoke(args.provider, explicit_user_revoke=args.explicit_user_revoke)
