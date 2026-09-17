@@ -1,21 +1,19 @@
 {
   "schema": "MAIBAO_FAST_PATH_START_GATE_V1",
   "status": "OPEN",
-  "task_id": "unified-authorization-layer-v1-catchup-20260917",
+  "task_id": "platform-enforcement-acceptance-20260917",
   "repository": "lik710919-cpu/maibao-zero-cost-compute-v0",
   "contract_id": "MAIBAO_FAST_PATH_CROSS_REPO_BINDING_V1",
-  "branch": "experiment/unified-authorization-layer-v1",
-  "base_commit": "f525a71d27440960a56310ce7252ee4a573e3cdc",
-  "task_summary": "建设统一授权层 V1 公共复用能力",
+  "branch": "evidence/platform-enforcement-acceptance-20260917",
+  "base_commit": "5a8154f9c2c317b15bb74aa73c36aca8f9acb174",
+  "task_summary": "记录 GitHub 原生分支保护与必需检查受保护路径验收证据",
   "owned_paths": [
-    ".github/workflows/unified-authorization-v1.yml",
-    "docs/superpowers",
-    "experiments/zero_cost_compute_v0"
+    "_evidence/platform-enforcement-20260917.md"
   ],
-  "task_type": "NON_FAST_PATH",
+  "task_type": "DOCUMENT_ONLY",
   "classification": {
-    "mode": "AUTO",
-    "reason": "NO_SAFE_FAST_PATH_MATCH"
+    "mode": "MANUAL_ACCEPTANCE",
+    "reason": "Platform enforcement acceptance evidence only"
   },
   "authority": {
     "repository": "lik710919-cpu/maibao-reserve-repo",
@@ -28,6 +26,9 @@
     "classifier_blob_sha": "1a1b1c9a091ec4da7ac8e0890355c88fe4416847",
     "catalog_blob_sha": "1fa2f2a6692ee2fc2f018cd3fd5cd8e63950c929"
   },
-  "catch_up_audit": true,
-  "catch_up_reason": "Task started before the Fast Path machine start gate was activated on the repository default branch; it is reclassified and bound before further construction."
+  "authority_digests": {
+    "classifier_sha256": "31df3c8ae22a5c7b840600e869ee2246f4e9b57e066410022de6a6e8f7e81b5f",
+    "catalog_sha256": "fa4b9342b424eb24848c02e4c63b719f4b22b6bda0374e8a799638ad844dcf7c"
+  },
+  "catch_up_audit": false
 }
