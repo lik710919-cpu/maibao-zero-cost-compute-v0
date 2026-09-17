@@ -81,9 +81,16 @@ def verify(receipt_path: Path, repository: str, branch: str, changed_paths: list
         raise ValueError("FAST_PATH_START_GATE_RECEIPT_INCOMPLETE")
     if receipt.get("task_type") not in {"CODE_BUGFIX", "CONFIG_CONTRACT", "DOCUMENT_ONLY", "PROVIDER_INTERNAL", "LINE_REPAIR", "NON_FAST_PATH"}:
         raise ValueError("FAST_PATH_START_GATE_TASK_TYPE_INVALID")
-    digests = receipt.get("authority_digests") or {}
-    if not digests.get("classifier_sha256") or not digests.get("catalog_sha256"):
-        raise ValueError("FAST_PATH_START_GATE_AUTHORITY_DIGEST_MISSING")
+
+    is_catch_up = receipt.get("catch_up_audit") is True
+    if is_catch_up:
+        reason = str(receipt.get("catch_up_reason", "")).strip()
+        if not reason:
+            raise ValueError("FAST_PATH_START_GATE_CATCH_UP_REASON_REQUIRED")
+    else:
+        digests = receipt.get("authority_digests") or {}
+        if not digests.get("classifier_sha256") or not digests.get("catalog_sha256"):
+            raise ValueError("FAST_PATH_START_GATE_AUTHORITY_DIGEST_MISSING")
 
     owned_paths = [normalize(item) for item in receipt.get("owned_paths", []) if normalize(item)]
     for changed in changed_paths:
@@ -98,6 +105,7 @@ def verify(receipt_path: Path, repository: str, branch: str, changed_paths: list
         "task_type": receipt["task_type"],
         "authority_ref": authority["ref"],
         "authority_blobs": authority_blobs,
+        "catch_up_audit": is_catch_up,
     }
 
 
