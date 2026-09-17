@@ -1,0 +1,80 @@
+name: Zero Cash Cost External Compute V0
+
+on:
+  push:
+    branches:
+      - experiment/zero-cost-compute-v0
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  N: "40000000"
+
+jobs:
+  worker:
+    name: worker-${{ matrix.index }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        index: [0, 1, 2, 3]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run external compute chunk
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: >-
+          python experiments/zero_cost_compute_v0/compute_chunk.py
+          --n "$N"
+          --chunks 4
+          --index "${{ matrix.index }}"
+          --output "out/result-${{ matrix.index }}.json"
+
+      - name: Upload worker result
+        uses: actions/upload-artifact@v4
+        with:
+          name: result-${{ matrix.index }}
+          path: out/result-${{ matrix.index }}.json
+          if-no-files-found: error
+          retention-days: 7
+
+  aggregate:
+    name: aggregate-and-verify
+    needs: worker
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run unit tests
+        run: python -m unittest discover -s experiments/zero_cost_compute_v0/tests -v
+
+      - name: Download all worker results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: result-*
+          path: results
+          merge-multiple: true
+
+      - name: Verify and aggregate externally
+        run: >-
+          python experiments/zero_cost_compute_v0/aggregate_results.py
+          --results-dir results
+          --output-dir evidence
+
+      - name: Upload final evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: zero-cost-compute-v0-evidence
+          path: evidence
+          if-no-files-found: error
+          retention-days: 30
