@@ -30,6 +30,21 @@ class ProviderProbeTests(unittest.TestCase):
         self.assertFalse(self_hosted.healthy)
         self.assertNotEqual(self_hosted.status, "ready")
 
+    def test_current_catalog_does_not_promote_unproven_candidates(self):
+        import provider_probe
+        catalog = provider_probe.current_catalog(
+            run_id="35191663499",
+            runner_environment="github-hosted",
+            repository_visibility="public",
+            queue_seconds=4.0,
+            capacity=4,
+        )
+        self.assertEqual(catalog["live_provider_count"], 1)
+        self.assertEqual(catalog["live_provider_ids"], ["github-actions-public"])
+        self.assertFalse(catalog["cross_provider_closed"])
+        self.assertEqual(catalog["route"]["primary"], "github-actions-public")
+        self.assertEqual(catalog["candidate_provider_ids"], ["netlify-free", "vercel-free"])
+
 
 if __name__ == "__main__":
     unittest.main()
