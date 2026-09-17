@@ -19,6 +19,25 @@ class AuthorizationIngressGuardTests(unittest.TestCase):
         self.assertEqual(decision.route, AuthorizationRoute.UNIFIED_REQUIRED)
         self.assertTrue(decision.intercept)
 
+    def test_unknown_persistent_authorization_capability_is_intercepted_for_research(self):
+        from authorization_ingress import AuthorizationIngressGuard, AuthorizationRoute
+
+        guard = AuthorizationIngressGuard()
+        decision = guard.classify(
+            provider_id="new-provider",
+            supports_persistent_authorization=None,
+            authorization_required=True,
+        )
+        self.assertEqual(decision.route, AuthorizationRoute.DISCOVERY_REQUIRED)
+        self.assertTrue(decision.intercept)
+        with self.assertRaises(RuntimeError):
+            guard.assert_route_allowed(
+                provider_id="new-provider",
+                supports_persistent_authorization=None,
+                authorization_required=True,
+                requested_route="private_script",
+            )
+
     def test_private_parallel_authorization_path_is_rejected_for_supported_platform(self):
         from authorization_ingress import AuthorizationIngressGuard
 
