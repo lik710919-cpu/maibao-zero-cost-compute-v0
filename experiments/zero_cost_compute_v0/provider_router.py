@@ -1,6 +1,11 @@
 from provider_model import ProviderSnapshot
 
 
+def has_real_execution_evidence(provider: ProviderSnapshot) -> bool:
+    evidence = provider.evidence.strip().lower()
+    return evidence.startswith("run:") or evidence.startswith("real")
+
+
 def eligible_providers(providers: list[ProviderSnapshot]) -> list[ProviderSnapshot]:
     eligible = [
         provider
@@ -9,6 +14,7 @@ def eligible_providers(providers: list[ProviderSnapshot]) -> list[ProviderSnapsh
         and provider.healthy
         and provider.zero_cash_cost
         and provider.status == "ready"
+        and has_real_execution_evidence(provider)
     ]
     return sorted(eligible, key=lambda provider: (provider.queue_seconds, -provider.capacity, provider.provider_id))
 
