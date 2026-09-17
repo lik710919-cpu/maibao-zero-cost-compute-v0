@@ -1,0 +1,127 @@
+name: Zero Cash Cost External Compute V5 Adaptive Pool
+
+on:
+  push:
+    branches:
+      - experiment/zero-cost-compute-v5-adaptive-pool
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  V5_N: "800000"
+  V5_TARGET_ITEMS: "100000"
+  V5_MAX_CHUNKS: "8"
+  WANDBOX_COMPILER: "cpython-3.13.8"
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run full unit suite
+        run: python -m unittest discover -s experiments/zero_cost_compute_v0/tests -v
+
+  plan:
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      n: ${{ steps.plan.outputs.n }}
+      chunks: ${{ steps.plan.outputs.chunks }}
+      assignments: ${{ steps.plan.outputs.assignments }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build adaptive provider pool plan
+        id: plan
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: >-
+          python experiments/zero_cost_compute_v0/build_pool_plan.py
+          --n "$V5_N"
+          --target-items-per-chunk "$V5_TARGET_ITEMS"
+          --max-chunks "$V5_MAX_CHUNKS"
+          --compiler "$WANDBOX_COMPILER"
+          --require-provider-count 2
+          --output plan/pool-plan.json
+          --github-output "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v5-pool-plan
+          path: plan/pool-plan.json
+          if-no-files-found: error
+
+  workers:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        assignment: ${{ fromJSON(needs.plan.outputs.assignments) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Execute scheduler-assigned provider shard
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: >-
+          python experiments/zero_cost_compute_v0/assigned_chunk.py
+          --n "${{ needs.plan.outputs.n }}"
+          --chunks "${{ needs.plan.outputs.chunks }}"
+          --index "${{ matrix.assignment.index }}"
+          --provider "${{ matrix.assignment.provider_id }}"
+          --compiler "$WANDBOX_COMPILER"
+          --output "out/result-${{ matrix.assignment.index }}.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v5-result-${{ matrix.assignment.index }}
+          path: out/result-${{ matrix.assignment.index }}.json
+          if-no-files-found: error
+
+  aggregate:
+    needs: [plan, workers]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: v5-pool-plan
+          path: plan
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: v5-result-*
+          path: results
+          merge-multiple: true
+      - name: Verify full adaptive pool result
+        run: >-
+          python experiments/zero_cost_compute_v0/aggregate_results.py
+          --results-dir results --output-dir evidence
+          --expected-n "${{ needs.plan.outputs.n }}"
+          --expected-chunks "${{ needs.plan.outputs.chunks }}"
+      - name: Verify assignments, budgets and returned provider identities
+        run: >-
+          python experiments/zero_cost_compute_v0/verify_pool.py
+          --plan plan/pool-plan.json
+          --results-dir results
+          --output evidence/pool-verification.json
+      - name: Build provider catalog from the actual Wandbox shard
+        env:
+          RUNNER_ENVIRONMENT: ${{ runner.environment }}
+          REPO_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: >-
+          python experiments/zero_cost_compute_v0/provider_probe.py
+          --output evidence/provider-catalog.json
+          --wandbox-result results/result-4.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zero-cost-compute-v5-evidence
+          path: evidence
+          if-no-files-found: error
+          retention-days: 30
