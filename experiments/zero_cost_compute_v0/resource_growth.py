@@ -2,6 +2,8 @@ import argparse
 import json
 from pathlib import Path
 
+from authorization_ingress import AuthorizationRoute, authorization_policy_from_candidate
+from authorization_profiles import apply_profile
 from provider_qualification import ProviderCandidate, qualify_candidate
 
 
@@ -66,14 +68,30 @@ def build_growth_report(records: list[dict]) -> dict:
         "adapter_ready": [],
         "live_active": [],
     }
+    authorization_routes = {
+        "unified_authorization_required": [],
+        "authorization_discovery_required": [],
+        "authorization_exception_allowed": [],
+        "authorization_not_required": [],
+    }
+    route_to_group = {
+        AuthorizationRoute.UNIFIED_REQUIRED: "unified_authorization_required",
+        AuthorizationRoute.DISCOVERY_REQUIRED: "authorization_discovery_required",
+        AuthorizationRoute.EXCEPTION_ALLOWED: "authorization_exception_allowed",
+        AuthorizationRoute.NOT_REQUIRED: "authorization_not_required",
+    }
     details = []
     adapter_candidates = []
     research_candidates = []
 
-    for record in records:
+    for raw_record in records:
+        record = apply_profile(raw_record)
         candidate = _candidate_from_record(record)
         result = qualify_candidate(candidate)
         groups[result.state].append(candidate.provider_id)
+
+        auth_decision = authorization_policy_from_candidate(record)
+        authorization_routes[route_to_group[auth_decision.route]].append(candidate.provider_id)
 
         lifecycle_state = record.get("lifecycle_state", "researched")
         if lifecycle_state not in lifecycle:
@@ -93,6 +111,7 @@ def build_growth_report(records: list[dict]) -> dict:
         details.append(
             {
                 "provider_id": candidate.provider_id,
+                "authorization_provider_id": record["authorization_provider_id"],
                 "state": result.state,
                 "lifecycle_state": lifecycle_state,
                 "reasons": list(result.reasons),
@@ -106,6 +125,11 @@ def build_growth_report(records: list[dict]) -> dict:
                 "advertised_monthly_capacity_minutes": record.get("advertised_monthly_capacity_minutes"),
                 "advertised_monthly_core_hours": record.get("advertised_monthly_core_hours"),
                 "capacity_visibility": record.get("capacity_visibility", "unknown"),
+                "authorization_required": record["authorization_required"],
+                "supports_persistent_authorization": record["supports_persistent_authorization"],
+                "authorization_route": auth_decision.route.value,
+                "authorization_intercept": auth_decision.intercept,
+                "authorization_reason": auth_decision.reason,
             }
         )
 
@@ -117,6 +141,7 @@ def build_growth_report(records: list[dict]) -> dict:
     return {
         **groups,
         **lifecycle,
+        **authorization_routes,
         "next_adapter_target": next_adapter_target,
         "next_research_target": next_research_target,
         "candidate_count": len(records),

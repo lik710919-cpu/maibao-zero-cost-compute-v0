@@ -17,6 +17,7 @@ class ResourceGrowthTests(unittest.TestCase):
 
         self.assertIn("gitlab-hosted-runners", report["auto_eligible"])
         self.assertIn("gitlab-hosted-runners", report["adapter_ready"])
+        self.assertIn("gitlab-hosted-runners", report["unified_authorization_required"])
         self.assertIsNone(report["next_adapter_target"])
         self.assertEqual(report["next_research_target"], "circleci-open-source")
         self.assertIn("circleci-open-source", report["policy_gate"])
@@ -27,8 +28,52 @@ class ResourceGrowthTests(unittest.TestCase):
         self.assertIn("google-cloud-run-free-tier", report["manual_gate"])
         self.assertIn("cloudflare-workers-free", report["control_only"])
         self.assertIn("kaggle-notebooks", report["research_only"])
+        by_id = {item["provider_id"]: item for item in report["details"]}
+        self.assertEqual(by_id["gitlab-hosted-runners"]["authorization_provider_id"], "gitlab")
+        self.assertEqual(by_id["gitlab-hosted-runners"]["authorization_route"], "UNIFIED_REQUIRED")
+        self.assertTrue(by_id["gitlab-hosted-runners"]["authorization_intercept"])
         self.assertFalse(report["active_capacity_claimed"])
         self.assertEqual(report["local_formal_compute_percent"], 0)
+
+    def test_growth_report_forces_supported_persistent_auth_into_unified_center(self):
+        import resource_growth
+
+        records = [
+            {
+                "provider_id": "supported-auth-provider",
+                "zero_cash_allowance": True,
+                "hard_quota_stop": True,
+                "requires_billing_account": False,
+                "automatic_overage_possible": False,
+                "authorized_use_confirmed": True,
+                "compute_class": "formal",
+                "activation_mode": "api",
+                "authorization_required": True,
+                "supports_persistent_authorization": True,
+            },
+            {
+                "provider_id": "unknown-auth-provider",
+                "zero_cash_allowance": True,
+                "hard_quota_stop": True,
+                "requires_billing_account": False,
+                "automatic_overage_possible": False,
+                "authorized_use_confirmed": True,
+                "compute_class": "formal",
+                "activation_mode": "api",
+                "authorization_required": True,
+                "supports_persistent_authorization": None,
+            },
+        ]
+
+        report = resource_growth.build_growth_report(records)
+
+        self.assertIn("supported-auth-provider", report["unified_authorization_required"])
+        self.assertIn("unknown-auth-provider", report["authorization_discovery_required"])
+        by_id = {item["provider_id"]: item for item in report["details"]}
+        self.assertEqual(by_id["supported-auth-provider"]["authorization_route"], "UNIFIED_REQUIRED")
+        self.assertTrue(by_id["supported-auth-provider"]["authorization_intercept"])
+        self.assertEqual(by_id["unknown-auth-provider"]["authorization_route"], "DISCOVERY_REQUIRED")
+        self.assertTrue(by_id["unknown-auth-provider"]["authorization_intercept"])
 
     def test_report_fails_closed_when_no_safe_adapter_exists(self):
         import resource_growth
@@ -67,6 +112,7 @@ class ResourceGrowthTests(unittest.TestCase):
             data = json.loads(output.read_text(encoding="utf-8"))
             self.assertIsNone(data["next_adapter_target"])
             self.assertEqual(data["next_research_target"], "circleci-open-source")
+            self.assertIn("gitlab-hosted-runners", data["unified_authorization_required"])
             self.assertFalse(data["active_capacity_claimed"])
             self.assertEqual(data["local_formal_compute_percent"], 0)
 

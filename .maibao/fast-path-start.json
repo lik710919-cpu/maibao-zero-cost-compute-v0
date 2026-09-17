@@ -1,0 +1,33 @@
+{
+  "schema": "MAIBAO_FAST_PATH_START_GATE_V1",
+  "status": "OPEN",
+  "task_id": "unified-authorization-layer-v1-catchup-20260917",
+  "repository": "lik710919-cpu/maibao-zero-cost-compute-v0",
+  "contract_id": "MAIBAO_FAST_PATH_CROSS_REPO_BINDING_V1",
+  "branch": "experiment/unified-authorization-layer-v1",
+  "base_commit": "f525a71d27440960a56310ce7252ee4a573e3cdc",
+  "task_summary": "建设统一授权层 V1 公共复用能力",
+  "owned_paths": [
+    ".github/workflows/unified-authorization-v1.yml",
+    "docs/superpowers",
+    "experiments/zero_cost_compute_v0"
+  ],
+  "task_type": "NON_FAST_PATH",
+  "classification": {
+    "mode": "AUTO",
+    "reason": "NO_SAFE_FAST_PATH_MATCH"
+  },
+  "authority": {
+    "repository": "lik710919-cpu/maibao-reserve-repo",
+    "ref": "feat/fast-path-machine-start-gate-20260917",
+    "classifier_path": "scripts/engineering_fast_path.py",
+    "cross_repo_entry_path": "scripts/engineering_fast_path_cross_repo.py",
+    "catalog_path": "config/engineering_fast_paths.json"
+  },
+  "authority_blobs": {
+    "classifier_blob_sha": "1a1b1c9a091ec4da7ac8e0890355c88fe4416847",
+    "catalog_blob_sha": "1fa2f2a6692ee2fc2f018cd3fd5cd8e63950c929"
+  },
+  "catch_up_audit": true,
+  "catch_up_reason": "Task started before the Fast Path machine start gate was activated on the repository default branch; it is reclassified and bound before further construction."
+}
