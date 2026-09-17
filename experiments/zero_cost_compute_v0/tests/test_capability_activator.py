@@ -170,6 +170,43 @@ class ExplicitRevocationTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             core.ensure_usable("fake")
 
+    def test_explicit_revoke_attempts_remote_runtime_cleanup_using_only_nonsecret_ids(self):
+        from authorization_core import AuthorizationCore, AuthorizationRecord, AuthorizationState
+
+        class RevokeAdapter:
+            provider_id = "fake"
+
+            def __init__(self):
+                self.remote = []
+
+            def revoke_runtime_credentials(self, runtime_ref, vault):
+                return None
+
+            def revoke_remote_runtime_credentials(self, *, runtime_credential_id, bound_resource):
+                self.remote.append((runtime_credential_id, bound_resource))
+
+            def revoke_user_authorization(self):
+                return None
+
+        adapter = RevokeAdapter()
+        vault = MemoryVault()
+        runtime_ref = vault.put("fake/runtime", "runtime-secret")
+        registry = MemoryRegistry(
+            AuthorizationRecord(
+                provider_id="fake",
+                state=AuthorizationState.AUTHORIZED,
+                runtime_credential_ref=runtime_ref,
+                runtime_credential_id="501",
+                bound_resource="78",
+            )
+        )
+        core = AuthorizationCore(adapters={"fake": adapter}, vault=vault, registry=registry)
+
+        core.revoke("fake")
+
+        self.assertEqual(adapter.remote, [("501", "78")])
+        self.assertFalse(vault.exists(runtime_ref))
+
     def test_runtime_repair_persists_provider_runtime_metadata(self):
         from authorization_core import AuthorizationCore, AuthorizationRecord, AuthorizationState
 
