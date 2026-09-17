@@ -17,6 +17,7 @@ class ResourceGrowthTests(unittest.TestCase):
 
         self.assertIn("gitlab-hosted-runners", report["auto_eligible"])
         self.assertIn("gitlab-hosted-runners", report["adapter_ready"])
+        self.assertIn("gitlab-hosted-runners", report["unified_authorization_required"])
         self.assertIsNone(report["next_adapter_target"])
         self.assertEqual(report["next_research_target"], "circleci-open-source")
         self.assertIn("circleci-open-source", report["policy_gate"])
@@ -27,6 +28,10 @@ class ResourceGrowthTests(unittest.TestCase):
         self.assertIn("google-cloud-run-free-tier", report["manual_gate"])
         self.assertIn("cloudflare-workers-free", report["control_only"])
         self.assertIn("kaggle-notebooks", report["research_only"])
+        by_id = {item["provider_id"]: item for item in report["details"]}
+        self.assertEqual(by_id["gitlab-hosted-runners"]["authorization_provider_id"], "gitlab")
+        self.assertEqual(by_id["gitlab-hosted-runners"]["authorization_route"], "UNIFIED_REQUIRED")
+        self.assertTrue(by_id["gitlab-hosted-runners"]["authorization_intercept"])
         self.assertFalse(report["active_capacity_claimed"])
         self.assertEqual(report["local_formal_compute_percent"], 0)
 
@@ -107,6 +112,7 @@ class ResourceGrowthTests(unittest.TestCase):
             data = json.loads(output.read_text(encoding="utf-8"))
             self.assertIsNone(data["next_adapter_target"])
             self.assertEqual(data["next_research_target"], "circleci-open-source")
+            self.assertIn("gitlab-hosted-runners", data["unified_authorization_required"])
             self.assertFalse(data["active_capacity_claimed"])
             self.assertEqual(data["local_formal_compute_percent"], 0)
 
