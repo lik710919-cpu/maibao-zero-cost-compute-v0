@@ -68,6 +68,15 @@ def verify(receipt_path: Path, repository: str, branch: str, changed_paths: list
         raise ValueError("FAST_PATH_START_GATE_AUTHORITY_REF_MISMATCH")
     if authority.get("cross_repo_entry_path") != binding.get("authority_entry"):
         raise ValueError("FAST_PATH_START_GATE_AUTHORITY_ENTRY_MISMATCH")
+
+    authority_blobs = receipt.get("authority_blobs") or {}
+    expected_blobs = {
+        "classifier_blob_sha": binding.get("authority_classifier_blob_sha"),
+        "catalog_blob_sha": binding.get("authority_catalog_blob_sha"),
+    }
+    if authority_blobs != expected_blobs:
+        raise ValueError("FAST_PATH_START_GATE_AUTHORITY_BLOB_MISMATCH")
+
     if not receipt.get("task_id") or not receipt.get("base_commit") or not receipt.get("task_summary"):
         raise ValueError("FAST_PATH_START_GATE_RECEIPT_INCOMPLETE")
     if receipt.get("task_type") not in {"CODE_BUGFIX", "CONFIG_CONTRACT", "DOCUMENT_ONLY", "PROVIDER_INTERNAL", "LINE_REPAIR", "NON_FAST_PATH"}:
@@ -88,6 +97,7 @@ def verify(receipt_path: Path, repository: str, branch: str, changed_paths: list
         "branch": branch,
         "task_type": receipt["task_type"],
         "authority_ref": authority["ref"],
+        "authority_blobs": authority_blobs,
     }
 
 
