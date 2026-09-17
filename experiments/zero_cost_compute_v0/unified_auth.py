@@ -10,7 +10,9 @@ from typing import Any
 from authorization_core import AuthorizationCore, AuthorizationRecord, AuthorizationState
 from authorization_ingress import AuthorizationIngressGuard
 from authorization_storage import JsonAuthorizationRegistry, WindowsCredentialVault
+from capability_activator import CapabilityActivator
 from gitlab_auth_adapter import GitLabAuthAdapter
+from gitlab_live_activation import GitLabLiveActivationProbe
 
 
 @dataclass(frozen=True)
@@ -24,13 +26,21 @@ class ProviderRegistration:
 class UnifiedAuthorizationService:
     """Single mandatory authorization entry point for all eligible platforms."""
 
-    def __init__(self, *, registrations: dict[str, ProviderRegistration], vault: Any, registry: Any) -> None:
+    def __init__(
+        self,
+        *,
+        registrations: dict[str, ProviderRegistration],
+        vault: Any,
+        registry: Any,
+        activation_probes: dict[str, Any] | None = None,
+    ) -> None:
         self.registrations = dict(registrations)
         self.vault = vault
         self.registry = registry
         self.guard = AuthorizationIngressGuard(registry=registry)
 
         adapters = {}
+        persistent_authorization = {}
         for provider_id, registration in self.registrations.items():
             if provider_id != registration.provider_id:
                 raise ValueError("provider registration key does not match provider_id")
@@ -43,8 +53,16 @@ class UnifiedAuthorizationService:
                 registered_with_unified_core=True,
             )
             adapters[provider_id] = registration.adapter
+            persistent_authorization[provider_id] = bool(registration.supports_persistent_authorization)
 
         self.core = AuthorizationCore(adapters=adapters, vault=vault, registry=registry)
+        self.activator = CapabilityActivator(
+            core=self.core,
+            registry=registry,
+            probes=dict(activation_probes or {}),
+            ingress_guard=self.guard,
+            persistent_authorization=persistent_authorization,
+        )
 
     def _registration(self, provider_id: str) -> ProviderRegistration:
         try:
@@ -93,6 +111,16 @@ class UnifiedAuthorizationService:
         self._assert_unified_route(provider_id)
         return self.core.ensure_usable(provider_id)
 
+    def activate(self, provider_id: str) -> dict[str, Any]:
+        self._assert_unified_route(provider_id)
+        return self.activator.activate(provider_id)
+
+    def onboard(self, provider_id: str) -> dict[str, Any]:
+        record = self.begin(provider_id)
+        if record.state != AuthorizationState.AUTHORIZED or record.revoked_by_user:
+            raise RuntimeError("provider authorization did not complete; activation is blocked")
+        return self.activate(provider_id)
+
     def revoke(self, provider_id: str, *, explicit_user_revoke: bool) -> AuthorizationRecord:
         self._registration(provider_id)
         if not explicit_user_revoke:
@@ -134,13 +162,7 @@ def default_state_dir() -> Path:
     return Path.home() / ".local" / "state" / "maibao" / "authorization-center"
 
 
-def build_default_service(*, state_dir: str | Path | None = None) -> UnifiedAuthorizationService:
-    if os.name != "nt":
-        raise RuntimeError("production unified authorization V1 currently requires Windows Credential Manager")
-    root = Path(state_dir) if state_dir is not None else default_state_dir()
-    registry = JsonAuthorizationRegistry(root / "authorization-registry.json")
-    vault = WindowsCredentialVault(prefix="maibao-auth")
-    gitlab = GitLabAuthAdapter()
+def build_gitlab_service(*, vault: Any, registry: Any, gitlab: GitLabAuthAdapter) -> UnifiedAuthorizationService:
     return UnifiedAuthorizationService(
         registrations={
             "gitlab": ProviderRegistration(
@@ -152,7 +174,20 @@ def build_default_service(*, state_dir: str | Path | None = None) -> UnifiedAuth
         },
         vault=vault,
         registry=registry,
+        activation_probes={
+            "gitlab": GitLabLiveActivationProbe(vault=vault, runner=gitlab.runner),
+        },
     )
+
+
+def build_default_service(*, state_dir: str | Path | None = None) -> UnifiedAuthorizationService:
+    if os.name != "nt":
+        raise RuntimeError("production unified authorization V1 currently requires Windows Credential Manager")
+    root = Path(state_dir) if state_dir is not None else default_state_dir()
+    registry = JsonAuthorizationRegistry(root / "authorization-registry.json")
+    vault = WindowsCredentialVault(prefix="maibao-auth")
+    gitlab = GitLabAuthAdapter()
+    return build_gitlab_service(vault=vault, registry=registry, gitlab=gitlab)
 
 
 def _json_print(payload: dict[str, Any]) -> None:
@@ -163,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Maibao unified authorization center")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    for name in ("begin", "status", "ensure"):
+    for name in ("begin", "status", "ensure", "activate", "onboard"):
         command = subparsers.add_parser(name)
         command.add_argument("--provider", required=True)
 
@@ -184,6 +219,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "ensure":
         service.ensure(args.provider)
         _json_print(service.public_status(args.provider))
+        return 0
+    if args.command == "activate":
+        _json_print(service.activate(args.provider))
+        return 0
+    if args.command == "onboard":
+        _json_print(service.onboard(args.provider))
         return 0
     if args.command == "revoke":
         service.revoke(args.provider, explicit_user_revoke=args.explicit_user_revoke)
