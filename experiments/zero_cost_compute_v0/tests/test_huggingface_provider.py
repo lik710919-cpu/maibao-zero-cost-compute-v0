@@ -3,7 +3,8 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 
 class HuggingFaceProviderTests(unittest.TestCase):
@@ -57,6 +58,47 @@ class HuggingFaceProviderTests(unittest.TestCase):
         self.assertEqual(evidence["capability_scope"], "MAIBAO_SHARED")
         self.assertEqual(evidence["capability_kind"], "ai_inference")
         self.assertFalse(evidence["generic_compute"])
+
+    def test_provider_snapshot_requires_real_evidence_and_free_tier(self):
+        import provider_probe
+
+        ready = provider_probe.huggingface_snapshot(
+            "real:huggingface:run-1",
+            healthy=True,
+            free_tier_confirmed=True,
+        )
+        self.assertEqual(ready.provider_id, "huggingface-inference-providers")
+        self.assertEqual(ready.status, "ready")
+        self.assertTrue(ready.zero_cash_cost)
+
+        unpaid = provider_probe.huggingface_snapshot(
+            "real:huggingface:run-2",
+            healthy=True,
+            free_tier_confirmed=False,
+        )
+        self.assertNotEqual(unpaid.status, "ready")
+        self.assertFalse(unpaid.zero_cash_cost)
+
+    def test_shared_manifest_exposes_one_cross_repository_contract(self):
+        manifest = json.loads((ROOT / "shared_capabilities.json").read_text(encoding="utf-8"))
+        entries = {item["capability_id"]: item for item in manifest["capabilities"]}
+        item = entries["huggingface-ai-inference"]
+        self.assertEqual(item["scope"], "MAIBAO_SHARED")
+        self.assertEqual(
+            item["implementation_repository"],
+            "lik710919-cpu/maibao-zero-cost-compute-v0",
+        )
+        self.assertEqual(item["provider_id"], "huggingface-inference-providers")
+        self.assertFalse(item["generic_compute"])
+        self.assertTrue(item["cross_repository_consumable"])
+
+    def test_candidate_catalog_marks_huggingface_as_inference_only(self):
+        candidates = json.loads((ROOT / "provider_candidates.json").read_text(encoding="utf-8"))
+        entries = {item["provider_id"]: item for item in candidates}
+        item = entries["huggingface-inference-providers"]
+        self.assertEqual(item["compute_class"], "ai_inference")
+        self.assertFalse(item["formal_pool_eligible"])
+        self.assertEqual(item["lifecycle_state"], "adapter_ready")
 
 
 if __name__ == "__main__":
