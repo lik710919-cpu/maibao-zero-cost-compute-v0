@@ -34,6 +34,7 @@ def activate(
     expected_text: str,
     confirm_free_tier: bool,
     requester=perform_request,
+    token_cache_getter=None,
 ) -> dict:
     if confirm_free_tier is not True:
         raise RuntimeError("free-tier confirmation is required before live activation")
@@ -41,6 +42,7 @@ def activate(
     request = build_chat_completion_request(
         model=model,
         prompt=prompt,
+        token_cache_getter=token_cache_getter,
     )
     response = requester(request)
     evidence = build_verified_evidence(
