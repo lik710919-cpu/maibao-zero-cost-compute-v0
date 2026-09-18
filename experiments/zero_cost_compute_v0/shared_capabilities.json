@@ -14,14 +14,23 @@
       "implementation_ref": "main",
       "implementation_path": "experiments/zero_cost_compute_v0/huggingface_provider.py",
       "interface": "OpenAI-compatible chat completions through Hugging Face router",
-      "auth_env": "HF_TOKEN",
       "activation_state": "ADAPTER_READY",
       "live_ready_requires": [
-        "fine-grained HF token with inference permission",
+        "Hugging Face browser/device authorization completed on the execution machine",
         "real external inference receipt",
         "free-tier credit confirmation"
       ],
-      "routing_rule": "eligible for AI inference requests only; excluded from generic compute routing"
+      "routing_rule": "eligible for AI inference requests only; excluded from generic compute routing",
+      "auth_mode": "huggingface_browser_device_oauth",
+      "token_source": "huggingface_hub_standard_cache",
+      "manual_token_paste_not_required": true,
+      "auth_command": "hf auth login --format agent",
+      "cost_guard": {
+        "mode": "free_credit_only",
+        "monthly_free_credit_usd": 0.1,
+        "extra_usage_requires_purchased_credits": true,
+        "real_probe_requires_explicit_free_tier_confirmation": true
+      }
     }
   ]
 }
