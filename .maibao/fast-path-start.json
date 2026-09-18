@@ -1,25 +1,24 @@
 {
   "schema": "MAIBAO_FAST_PATH_START_GATE_V1",
   "status": "OPEN",
-  "task_id": "huggingface-shared-capability-20260918",
+  "task_id": "huggingface-browser-auth-20260918",
   "repository": "lik710919-cpu/maibao-zero-cost-compute-v0",
   "contract_id": "MAIBAO_FAST_PATH_CROSS_REPO_BINDING_V1",
-  "branch": "feat/huggingface-shared-capability-20260918",
-  "base_commit": "c488992c72dee0f572f045ee1753866c508b61d7",
-  "task_summary": "将 Hugging Face 接入为迈宝可跨仓库共享的人工智能推理能力，并完成适配、资格判断、测试和共享能力登记",
+  "branch": "feat/huggingface-browser-auth-20260918",
+  "base_commit": "e7ff83d688120536af43637219bd11f35e518725",
+  "task_summary": "让 Hugging Face 共享推理能力复用官方浏览器设备登录缓存，避免在聊天中传递访问令牌，并保留零现金费用门禁",
   "owned_paths": [
     "experiments/zero_cost_compute_v0/huggingface_provider.py",
-    "experiments/zero_cost_compute_v0/provider_probe.py",
-    "experiments/zero_cost_compute_v0/provider_candidates.json",
+    "experiments/zero_cost_compute_v0/huggingface_activation.py",
     "experiments/zero_cost_compute_v0/shared_capabilities.json",
     "experiments/zero_cost_compute_v0/tests/test_huggingface_provider.py",
-    "_evidence/huggingface-shared-capability-20260918.md"
+    "_evidence/huggingface-browser-auth-20260918.md"
   ],
   "task_type": "PROVIDER_INTERNAL",
   "classification": {
     "mode": "MANUAL_OVERRIDE",
     "reason": "USER_OVERRIDE",
-    "override_reason": "单仓库施工，但形成的 Hugging Face 能力必须作为迈宝共享能力供任意仓库消费"
+    "override_reason": "复用 Hugging Face 官方浏览器设备授权和本机标准令牌缓存，不新增私有认证旁路"
   },
   "authority": {
     "repository": "lik710919-cpu/maibao-reserve-repo",
@@ -37,6 +36,6 @@
     "catalog_sha256": "fa4b9342b424eb24848c02e4c63b719f4b22b6bda0374e8a799638ad844dcf7c"
   },
   "override_task_type": "PROVIDER_INTERNAL",
-  "override_reason": "单仓库施工，但形成的 Hugging Face 能力必须作为迈宝共享能力供任意仓库消费",
+  "override_reason": "复用 Hugging Face 官方浏览器设备授权和本机标准令牌缓存，不新增私有认证旁路",
   "catch_up_audit": false
 }
