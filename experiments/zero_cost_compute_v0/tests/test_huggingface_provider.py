@@ -101,5 +101,47 @@ class HuggingFaceProviderTests(unittest.TestCase):
         self.assertEqual(item["lifecycle_state"], "adapter_ready")
 
 
+    def test_browser_login_cache_supplies_token_when_explicit_token_is_absent(self):
+        import huggingface_provider
+
+        request = huggingface_provider.build_chat_completion_request(
+            token=None,
+            token_cache_getter=lambda: "hf_cached_secret",
+            model="openai/gpt-oss-120b",
+            prompt="return READY",
+        )
+        self.assertEqual(request.headers["Authorization"], "Bearer hf_cached_secret")
+        self.assertNotIn("hf_cached_secret", json.dumps(request.safe_summary()))
+
+    def test_explicit_token_wins_over_cached_token(self):
+        import huggingface_provider
+
+        request = huggingface_provider.build_chat_completion_request(
+            token="hf_explicit_secret",
+            token_cache_getter=lambda: "hf_cached_secret",
+            model="openai/gpt-oss-120b",
+            prompt="return READY",
+        )
+        self.assertEqual(request.headers["Authorization"], "Bearer hf_explicit_secret")
+
+    def test_missing_browser_login_cache_fails_closed(self):
+        import huggingface_provider
+
+        with self.assertRaises(RuntimeError):
+            huggingface_provider.build_chat_completion_request(
+                token=None,
+                token_cache_getter=lambda: None,
+                model="openai/gpt-oss-120b",
+                prompt="return READY",
+            )
+
+    def test_shared_manifest_prefers_official_browser_device_login(self):
+        manifest = json.loads((ROOT / "shared_capabilities.json").read_text(encoding="utf-8"))
+        item = manifest["capabilities"][0]
+        self.assertEqual(item["auth_mode"], "huggingface_browser_device_oauth")
+        self.assertEqual(item["token_source"], "huggingface_hub_standard_cache")
+        self.assertTrue(item["manual_token_paste_not_required"])
+
+
 if __name__ == "__main__":
     unittest.main()
