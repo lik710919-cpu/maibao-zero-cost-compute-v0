@@ -47,6 +47,27 @@ def wandbox_snapshot(evidence: str, status: str, compiler: str) -> ProviderSnaps
     )
 
 
+def huggingface_snapshot(
+    evidence: str,
+    *,
+    healthy: bool,
+    free_tier_confirmed: bool,
+) -> ProviderSnapshot:
+    real = str(evidence).startswith("real:huggingface:")
+    zero_cash_cost = real and bool(healthy) and bool(free_tier_confirmed)
+    ready = real and bool(healthy) and zero_cash_cost
+    return ProviderSnapshot(
+        provider_id="huggingface-inference-providers",
+        authorized=real,
+        healthy=bool(healthy),
+        zero_cash_cost=zero_cash_cost,
+        queue_seconds=0.0,
+        capacity=1 if ready else 0,
+        evidence=str(evidence) if real else "none",
+        status="ready" if ready else "not_eligible",
+    )
+
+
 def current_catalog(
     run_id: str,
     runner_environment: str,

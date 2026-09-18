@@ -1,0 +1,27 @@
+{
+  "schema": "MAIBAO_SHARED_CAPABILITIES_V1",
+  "authority_repository": "lik710919-cpu/maibao-zero-cost-compute-v0",
+  "capabilities": [
+    {
+      "capability_id": "huggingface-ai-inference",
+      "display_name": "Hugging Face AI Inference",
+      "provider_id": "huggingface-inference-providers",
+      "scope": "MAIBAO_SHARED",
+      "capability_kind": "ai_inference",
+      "generic_compute": false,
+      "cross_repository_consumable": true,
+      "implementation_repository": "lik710919-cpu/maibao-zero-cost-compute-v0",
+      "implementation_ref": "main",
+      "implementation_path": "experiments/zero_cost_compute_v0/huggingface_provider.py",
+      "interface": "OpenAI-compatible chat completions through Hugging Face router",
+      "auth_env": "HF_TOKEN",
+      "activation_state": "ADAPTER_READY",
+      "live_ready_requires": [
+        "fine-grained HF token with inference permission",
+        "real external inference receipt",
+        "free-tier credit confirmation"
+      ],
+      "routing_rule": "eligible for AI inference requests only; excluded from generic compute routing"
+    }
+  ]
+}
