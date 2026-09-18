@@ -1,19 +1,25 @@
 {
   "schema": "MAIBAO_FAST_PATH_START_GATE_V1",
   "status": "OPEN",
-  "task_id": "platform-enforcement-acceptance-20260917",
+  "task_id": "huggingface-shared-capability-20260918",
   "repository": "lik710919-cpu/maibao-zero-cost-compute-v0",
   "contract_id": "MAIBAO_FAST_PATH_CROSS_REPO_BINDING_V1",
-  "branch": "evidence/platform-enforcement-acceptance-20260917",
-  "base_commit": "5a8154f9c2c317b15bb74aa73c36aca8f9acb174",
-  "task_summary": "记录 GitHub 原生分支保护与必需检查受保护路径验收证据",
+  "branch": "feat/huggingface-shared-capability-20260918",
+  "base_commit": "c488992c72dee0f572f045ee1753866c508b61d7",
+  "task_summary": "将 Hugging Face 接入为迈宝可跨仓库共享的人工智能推理能力，并完成适配、资格判断、测试和共享能力登记",
   "owned_paths": [
-    "_evidence/platform-enforcement-20260917.md"
+    "experiments/zero_cost_compute_v0/huggingface_provider.py",
+    "experiments/zero_cost_compute_v0/provider_probe.py",
+    "experiments/zero_cost_compute_v0/provider_candidates.json",
+    "experiments/zero_cost_compute_v0/shared_capabilities.json",
+    "experiments/zero_cost_compute_v0/tests/test_huggingface_provider.py",
+    "_evidence/huggingface-shared-capability-20260918.md"
   ],
-  "task_type": "DOCUMENT_ONLY",
+  "task_type": "PROVIDER_INTERNAL",
   "classification": {
-    "mode": "MANUAL_ACCEPTANCE",
-    "reason": "Platform enforcement acceptance evidence only"
+    "mode": "MANUAL_OVERRIDE",
+    "reason": "USER_OVERRIDE",
+    "override_reason": "单仓库施工，但形成的 Hugging Face 能力必须作为迈宝共享能力供任意仓库消费"
   },
   "authority": {
     "repository": "lik710919-cpu/maibao-reserve-repo",
@@ -30,5 +36,7 @@
     "classifier_sha256": "31df3c8ae22a5c7b840600e869ee2246f4e9b57e066410022de6a6e8f7e81b5f",
     "catalog_sha256": "fa4b9342b424eb24848c02e4c63b719f4b22b6bda0374e8a799638ad844dcf7c"
   },
+  "override_task_type": "PROVIDER_INTERNAL",
+  "override_reason": "单仓库施工，但形成的 Hugging Face 能力必须作为迈宝共享能力供任意仓库消费",
   "catch_up_audit": false
 }
