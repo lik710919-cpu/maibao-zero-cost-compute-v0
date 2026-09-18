@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any
 
 
@@ -42,14 +43,39 @@ def _required_text(value: str, field: str) -> str:
     return text
 
 
+def resolve_hf_token(
+    token: str | None = None,
+    token_cache_getter: Callable[[], str | None] | None = None,
+) -> str:
+    if token is not None and str(token).strip():
+        return _required_text(token, "token")
+
+    if token_cache_getter is None:
+        try:
+            from huggingface_hub import get_token
+        except ImportError as exc:
+            raise RuntimeError(
+                "huggingface_hub is required for browser-auth token reuse"
+            ) from exc
+        token_cache_getter = get_token
+
+    cached = token_cache_getter()
+    if cached is None or not str(cached).strip():
+        raise RuntimeError(
+            "Hugging Face login required; run hf auth login --format agent"
+        )
+    return _required_text(cached, "token")
+
+
 def build_chat_completion_request(
     *,
-    token: str,
+    token: str | None = None,
+    token_cache_getter: Callable[[], str | None] | None = None,
     model: str,
     prompt: str,
     base_url: str = DEFAULT_BASE_URL,
 ) -> InferenceRequest:
-    clean_token = _required_text(token, "token")
+    clean_token = resolve_hf_token(token, token_cache_getter)
     clean_model = _required_text(model, "model")
     clean_prompt = str(prompt).strip()
     if not clean_prompt:
