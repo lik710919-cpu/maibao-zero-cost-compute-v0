@@ -143,5 +143,42 @@ class HuggingFaceProviderTests(unittest.TestCase):
         self.assertTrue(item["manual_token_paste_not_required"])
 
 
+    def test_live_activation_requires_free_tier_confirmation(self):
+        import huggingface_activation
+
+        with self.assertRaises(RuntimeError):
+            huggingface_activation.activate(
+                model="openai/gpt-oss-120b",
+                prompt="Return exactly READY",
+                expected_text="READY",
+                confirm_free_tier=False,
+                requester=lambda request: {
+                    "id": "should-not-run",
+                    "choices": [{"message": {"content": "READY"}}],
+                },
+                token_cache_getter=lambda: "hf_cached_secret",
+            )
+
+    def test_live_activation_reuses_browser_cache_and_returns_ready(self):
+        import huggingface_activation
+
+        evidence = huggingface_activation.activate(
+            model="openai/gpt-oss-120b",
+            prompt="Return exactly READY",
+            expected_text="READY",
+            confirm_free_tier=True,
+            requester=lambda request: {
+                "id": "chatcmpl-live-proof",
+                "choices": [{"message": {"content": "READY"}}],
+            },
+            token_cache_getter=lambda: "hf_cached_secret",
+        )
+        self.assertEqual(evidence["activation_state"], "READY")
+        self.assertEqual(evidence["auth_mode"], "huggingface_browser_device_oauth")
+        self.assertEqual(evidence["token_source"], "huggingface_hub_standard_cache")
+        self.assertFalse(evidence["manual_token_paste_used"])
+        self.assertTrue(evidence["free_tier_guard"])
+
+
 if __name__ == "__main__":
     unittest.main()
