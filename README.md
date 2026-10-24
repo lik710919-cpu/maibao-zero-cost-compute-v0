@@ -35,3 +35,9 @@ V1 在 V0 基础上增加：
 
 - `.github/workflows/zero-cost-compute-v0.yml`：最小外部并行计算验证。
 - `.github/workflows/zero-cost-compute-v1.yml`：自动分片、自动缺片检测、自动补算、自动汇总验证的闭环工作流。
+
+## 独立商务咨询（与本算力实验项目无关）
+
+如需了解迈宝的独立小范围工作流质量诊断，可查看 [中英双语服务说明与价格范围](https://maibao-inquiry-public-preview-20261024.onrender.com/services.html)，或在 [GitHub 公开商务咨询帖 #27](https://github.com/lik710919-cpu/maibao-zero-cost-compute-v0/issues/27) 留言。现有两档**非约束性拟议报价**为 US$39 单场景简报与 US$119 三场景诊断；实际范围、付款方式和验收标准均需双方书面确认。
+
+**用途隔离：** 这项商务服务与本仓库零成本算力池项目无关，不表示算力实验已商业化、已向真实客户交付或通过生产验收。GitHub 留言属于公开内容，请勿公开客户资料、账号凭据、合同或其他机密信息。
